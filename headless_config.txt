@@ -1,0 +1,79 @@
+[application]
+enable-perf-measurement=1
+perf-measurement-interval-sec=5
+
+[tiled-display]
+enable=0
+rows=1
+columns=1
+width=1280
+height=720
+
+# --- KONFIGURASI KAMERA INPUT ---
+# Gunakan tipe 1 jika menggunakan Kamera USB (V4L2)
+# Gunakan tipe 4 jika menggunakan IP Camera (RTSP)
+[source0]
+enable=1
+type=1
+# camera-width=1280
+# camera-height=720
+# camera-v4l2-dev-node=0
+# ZED 2 HD720 mode mengeluarkan resolusi gabungan 2560 x 720
+camera-width=2560
+camera-height=720
+camera-fps-n=30
+camera-fps-d=1
+camera-v4l2-dev-node=0
+
+# --- KONFIGURASI OUTPUT HEADLESS ---
+# Sink 0: Nonaktifkan tampilan monitor lokal (EglSink dicoret)
+[sink0]
+enable=0
+type=2
+
+# Sink 1: Simpan hasil inferensi ke dalam File MP4 (Pilihan Headless 1)
+[sink1]
+enable=0
+type=3
+container=1
+codec=1
+enc-type=0
+sync=0
+bitrate=4000000
+output-file=output_inference.mp4
+source-id=0
+
+# Sink 2: Stream balik via RTSP agar bisa ditonton dari Arch Linux (Pilihan Headless 2)
+[sink2]
+enable=1
+type=4
+codec=1
+enc-type=1
+sync=0
+bitrate=4000000
+rtsp-port=8554
+udp-port=5400
+nvbuf-memory-type=0
+iframeinterval=30
+
+[osd]
+enable=1
+border-width=2
+text-size=15
+nvbuf-memory-type=0
+
+[streammux]
+gpu-id=0
+batch-size=1
+batched-push-timeout=40000
+width=2560
+height=720
+nvbuf-memory-type=0
+
+# Menggunakan model deteksi bawaan ResNet10 (4 classes)
+[primary-gie]
+enable=1
+gpu-id=0
+gie-unique-id=1
+# config-file=config_infer_primary.txt
+config-file=config_infer_primary_yolov8.txt

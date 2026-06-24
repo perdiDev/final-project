@@ -1,0 +1,24 @@
+[property]
+gpu-id=0
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+custom-network-config=/home/aimp/FinalProject/best.onnx
+onnx-file=/home/aimp/FinalProject/best.onnx
+model-engine-file=/home/aimp/FinalProject/best.engine
+# 2 = FP16 precision (Highly recommended for Orin Nano)
+network-mode=2
+num-detected-classes=3
+gie-unique-id=1
+process-mode=1
+network-type=0
+# is-classifier=0
+maintain-aspect-ratio=1
+cluster-mode=4
+parse-bbox-func-name=NvDsInferParseYolo
+custom-lib-path=/home/aimp/FinalProject/libnvdsinfer_custom_impl_Yolo.so
+labelfile-path=/home/aimp/FinalProject/labels.txt
+
+[class-attrs-all]
+nms-iou-threshold=0.45
+pre-cluster-threshold=0.05
+topk=300
