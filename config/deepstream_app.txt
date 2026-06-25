@@ -70,10 +70,9 @@ width=2560
 height=720
 nvbuf-memory-type=0
 
-# Menggunakan model deteksi bawaan ResNet10 (4 classes)
+# Menggunakan model deteksi
 [primary-gie]
 enable=1
 gpu-id=0
 gie-unique-id=1
-# config-file=config_infer_primary.txt
-config-file=config_infer_primary_yolov8.txt
+config-file=pgie_yolov8n.txt
