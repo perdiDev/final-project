@@ -2,11 +2,15 @@
 gpu-id=0
 net-scale-factor=0.0039215697906911373
 model-color-format=0
+
+# --- File model ---
 custom-network-config=../models/yolov8n.onnx
 onnx-file=../models/yolov8n.onnx
 model-engine-file=../models/yolov8n.engine
-# 2 = FP16 precision (Highly recommended for Orin Nano)
+
+# 2 = FP16 precision (sangat disarankan untuk Jetson Orin Nano)
 network-mode=2
+
 num-detected-classes=3
 gie-unique-id=1
 process-mode=1
@@ -14,9 +18,12 @@ network-type=0
 # is-classifier=0
 maintain-aspect-ratio=1
 cluster-mode=4
+
+# --- Custom parser untuk output YOLO ---
 parse-bbox-func-name=NvDsInferParseYolo
 custom-lib-path=../lib/libnvdsinfer_custom_impl_Yolo.so
 labelfile-path=../models/labels.txt
+
 
 [class-attrs-all]
 nms-iou-threshold=0.45

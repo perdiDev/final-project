@@ -2,48 +2,56 @@
 enable-perf-measurement=1
 perf-measurement-interval-sec=5
 
-[tiled-display]
-enable=0
-rows=1
-columns=1
-width=1280
-height=720
 
-# --- KONFIGURASI KAMERA INPUT ---
-# Gunakan tipe 1 jika menggunakan Kamera USB (V4L2)
-# Gunakan tipe 4 jika menggunakan IP Camera (RTSP)
+# =============================================================================
+# KONFIGURASI KAMERA INPUT
+# Kamera mengirim frame gabungan stereo 2560x720 (kiri 1280px + kanan 1280px).
+#
+# CATATAN: key "src-crop" TIDAK valid di group [source0] pada deepstream-app
+# stock (akan muncul "WARN: Unknown key 'src-crop'" dan diabaikan begitu saja).
+# Memotong hanya sisi kiri/kanan secara presisi butuh elemen nvvideoconvert
+# custom (lewat kode Python/C), BUKAN lewat config text seperti ini.
+# Untuk sekarang, seluruh frame 2560x720 dipakai dan di-scale lewat
+# [streammux] di bawah (lihat catatan di sana).
+# =============================================================================
 [source0]
 enable=1
 type=1
-# camera-width=1280
-# camera-height=720
-# camera-v4l2-dev-node=0
-# ZED 2 HD720 mode mengeluarkan resolusi gabungan 2560 x 720
 camera-width=2560
 camera-height=720
 camera-fps-n=30
 camera-fps-d=1
 camera-v4l2-dev-node=0
 
-# --- KONFIGURASI OUTPUT HEADLESS ---
-# Sink 0: Nonaktifkan tampilan monitor lokal (EglSink dicoret)
+# =============================================================================
+# STREAMMUX
+# Wajib ada di deepstream-app, ini yang menentukan ukuran output frame yang
+# dikirim ke pgie. Karena crop di [source0] tidak didukung, sementara ini
+# width/height di-set 1280x720 -> nvstreammux akan SCALE seluruh frame
+# 2560x720 (kiri+kanan) jadi 1280x720, BUKAN memotong sisi kiri saja.
+# Ganti ke camera-width/camera-height asli (2560x720) kalau mau full frame
+# tanpa distorsi, atau tunggu solusi crop via kode untuk hasil yang presisi.
+# =============================================================================
+[streammux]
+batch-size=1
+width=1280
+height=720
+live-source=1
+batched-push-timeout=40000
+enable-padding=0
+nvbuf-memory-type=0
+
+
+# =============================================================================
+# KONFIGURASI OUTPUT (HEADLESS)
+# =============================================================================
+
+# Sink 0: tampilan monitor lokal dimatikan (mode headless)
 [sink0]
 enable=0
 type=2
 
-# Sink 1: Simpan hasil inferensi ke dalam File MP4 (Pilihan Headless 1)
-[sink1]
-enable=0
-type=3
-container=1
-codec=1
-enc-type=0
-sync=0
-bitrate=4000000
-output-file=output_inference.mp4
-source-id=0
-
-# Sink 2: Stream balik via RTSP agar bisa ditonton dari Arch Linux (Pilihan Headless 2)
+# Sink 2: stream balik via RTSP, ditonton dari Arch Linux
 [sink2]
 enable=1
 type=4
@@ -54,7 +62,7 @@ bitrate=4000000
 rtsp-port=8554
 udp-port=5400
 nvbuf-memory-type=0
-iframeinterval=30
+
 
 [osd]
 enable=1
@@ -62,15 +70,10 @@ border-width=2
 text-size=15
 nvbuf-memory-type=0
 
-[streammux]
-gpu-id=0
-batch-size=1
-batched-push-timeout=40000
-width=2560
-height=720
-nvbuf-memory-type=0
 
-# Menggunakan model deteksi
+# =============================================================================
+# MODEL DETEKSI (Primary GIE)
+# =============================================================================
 [primary-gie]
 enable=1
 gpu-id=0
