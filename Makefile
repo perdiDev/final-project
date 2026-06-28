@@ -52,7 +52,7 @@ NVCCFLAGS := -O2 $(CUDA_ARCH) \
              $(INC_COMMON)
 
 # ── Output ───────────────────────────────────────────────────────────
-TARGET    := ../lib/libnvds_custom_nms.so
+TARGET    := lib/libnvds_custom_nms.so
 BUILD_DIR := build
 
 OBJS := \
@@ -65,7 +65,7 @@ OBJS := \
 all: dirs $(TARGET)
 
 dirs:
-	@mkdir -p $(BUILD_DIR) ../lib
+	@mkdir -p $(BUILD_DIR) lib
 
 $(TARGET): $(OBJS)
 	$(CXX) -shared -o $@ $^ $(LIBS)
