@@ -1,0 +1,79 @@
+# ────────────────────────────────────────────────────────────────────────
+# pgie_yolov8n.txt  –  MODIFIED for custom CUDA NMS post-processing
+#
+# Key changes vs. original:
+#   cluster-mode : 4  →  2   (disable DeepStream's built-in NMS)
+#   output-tensor-meta=1      (attach raw ONNX output to frame user-meta)
+#
+# The custom probe (nms_postproc_probe in libnvds_custom_nms.so) reads
+# the raw tensor from NvDsInferTensorMeta, decodes it, and applies the
+# CUDA parallel NMS — completely replacing what cluster-mode used to do.
+# ────────────────────────────────────────────────────────────────────────
+
+[property]
+gpu-id=0
+
+# Pixel normalisation  (1/255 ≈ 0.0039215697906911373)
+net-scale-factor=0.0039215697906911373
+
+# Input colour order: 0=RGB, 1=BGR
+model-color-format=0
+
+# TensorRT engine (built from ONNX on first run, cached afterwards)
+onnx-file=../models/yolov8n.onnx
+model-engine-file=../models/yolov8n.engine
+
+# network-mode: 0=FP32, 1=INT8, 2=FP16 (recommended on Orin)
+network-mode=2
+
+num-detected-classes=3
+gie-unique-id=1
+
+# process-mode: 1=primary
+process-mode=1
+
+# network-type: 0=Detector
+network-type=0
+
+# Keep aspect ratio – letterboxes the input to fit the network
+maintain-aspect-ratio=1
+
+# ── Post-processing mode ────────────────────────────────────────────
+# cluster-mode=2 → NMS (old) is replaced by our CUDA probe.
+# The parse function still decodes raw tensors into candidate boxes,
+# but clustering/NMS is skipped here and handled in the probe instead.
+#
+# cluster-mode values (DeepStream 7.x):
+#   0 = OpenCV GroupRectangles
+#   1 = DBScan
+#   2 = NMS  ← we intentionally disable this via output-tensor-meta+probe
+#   3 = DBScan + NMS hybrid
+#   4 = NONE (no clustering — boxes pass through as-is)
+#
+# We use cluster-mode=4 (NONE) so the existing parse function still runs
+# and populates NvDsObjectMeta, then our probe REPLACES those boxes with
+# the custom CUDA NMS output.
+cluster-mode=4
+
+# ── Raw tensor output ───────────────────────────────────────────────
+# Attaches the raw ONNX output tensor as NvDsInferTensorMeta to each
+# frame's user-meta list.  The probe reads this to run its own decoder.
+output-tensor-meta=1
+
+# ── Custom library (unchanged from original) ────────────────────────
+# Still used for the initial box decode inside nvinfer.
+# The probe re-does the decode from the raw tensor and overwrites the
+# result with CUDA NMS output, so parse-func NMS (if any) is overridden.
+parse-bbox-func-name=NvDsInferParseYolo
+custom-lib-path=../lib/libnvdsinfer_custom_impl_Yolo.so
+
+# Label file
+labelfile-path=../models/labels.txt
+
+[class-attrs-all]
+# These thresholds are still used by the parse function for the initial
+# decode step.  The CUDA probe applies its own conf_thresh and nms_thresh
+# from NmsPostprocConfig — make sure they are consistent.
+nms-iou-threshold=0.45
+pre-cluster-threshold=0.05
+topk=300
