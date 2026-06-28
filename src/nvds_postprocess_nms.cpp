@@ -30,8 +30,9 @@
 /* ── DeepStream / GStreamer headers ───────────────────────────────── */
 #include "gstnvdsmeta.h"               /* gst_buffer_get_nvds_batch_meta   */
 #include "nvdsmeta.h"                  /* NvDsBatchMeta, NvDsFrameMeta …   */
-#include "nvds_infer_tensor_meta.h"    /* NvDsInferTensorMeta              */
-#include "nvbufsurface.h"              /* (for completeness)               */
+#include "gstnvdsinfer.h"              /* NvDsInferTensorMeta, NvDsInferLayerInfo,
+                                          NVDSINFER_TENSOR_OUTPUT_META       */
+#include "nvbufsurface.h"              /* NvBufSurface (for completeness)   */
 
 /* ── Module state ──────────────────────────────────────────────────── */
 static NmsPostprocConfig g_cfg;
