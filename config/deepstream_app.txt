@@ -17,9 +17,9 @@ perf-measurement-interval-sec=5
 [source0]
 enable=1
 type=1
-camera-width=2560
-camera-height=720
-camera-fps-n=30
+camera-width=1344
+camera-height=376
+camera-fps-n=15
 camera-fps-d=1
 camera-v4l2-dev-node=0
 
@@ -78,4 +78,4 @@ nvbuf-memory-type=0
 enable=1
 gpu-id=0
 gie-unique-id=1
-config-file=pgie_yolov8n.txt
+config-file=pgie2_yolov8n.txt

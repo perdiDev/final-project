@@ -195,7 +195,8 @@ GstPadProbeReturn nms_postproc_probe(
             if (um->base_meta.meta_type != NVDSINFER_TENSOR_OUTPUT_META) continue;
 
             auto* t = (NvDsInferTensorMeta*)um->user_meta_data;
-            if ((int)t->unique_component_id == g_cfg.gie_uid) {
+            if ((int)t->unique_id == g_cfg.gie_uid) {
+
                 tmeta = t;
                 break;
             }
