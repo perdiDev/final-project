@@ -5,36 +5,11 @@
 #include <iostream>
 #include <string>
 #include <stdlib.h>
-#include <chrono>
-#include <thread>
-#include <fstream>
 
-#include <nvdsmeta.h>
-#include <gstnvdsmeta.h>
-#include <nvll_osd_struct.h>
-
-// Struktur untuk menampung data benchmark per interval waktu/frame
-struct BenchmarkData {
-    double fps;
-    double total_latency_ms;
-    double pgie_latency_ms; // Gabungan pre-process + infer + post-process di nvinfer
-    float cpu_usage;
-    float gpu_usage;
-    float power_mw;
-    std::string timestamp;
-};
-
-// Queue thread-safe bawaan GLib untuk mencegah I/O Blocking
-GAsyncQueue *logger_queue = NULL;
 
 // Variabel Global
 GMainLoop *loop = NULL;
 GstElement *pipeline = NULL;
-
-// Variabel global untuk menampung status hardware terakhir
-float current_cpu = 0.0;
-float current_gpu = 0.0;
-float current_power = 0.0;
 
 // Handler Ctrl+C
 static void signal_handler(int sig) {
@@ -86,140 +61,6 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
             break;
     }
     return TRUE;
-}
-
-// Callback Probe pada Sink Pad nvosd (untuk hitung FPS & Latensi)
-static GstPadProbeReturn osd_sink_pad_buffer_probe(GstPad *pad, GstPadProbeInfo *info, gpointer u_data) {
-    GstBuffer *buf = (GstBuffer *) info->data;
-    NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta(buf);
-    
-    static auto start_time = std::chrono::steady_clock::now();
-    static int frame_count = 0;
-    static double current_fps = 0.0;
-
-    if (!batch_meta) return GST_PAD_PROBE_OK;
-
-    frame_count++;
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-    
-    // Hitung FPS setiap 1000ms (1 detik)
-    if (elapsed >= 1000) {
-        current_fps = (frame_count * 1000.0) / elapsed;
-        frame_count = 0;
-        start_time = std::chrono::steady_clock::now();
-    }
-
-    for (NvDsMetaList *l_frame = batch_meta->frame_meta_list; l_frame != NULL; l_frame = l_frame->next) {
-        NvDsFrameMeta *frame_meta = (NvDsFrameMeta *)(l_frame->data);
-
-        // 1. TAMPILKAN FPS KE OSD
-	NvDsDisplayMeta *display_meta = nvds_acquire_display_meta_from_pool(batch_meta);
-        NvOSD_TextParams *txt_params  = &display_meta->text_params[0];
-        display_meta->num_labels = 1;
-        
-        char text[64];
-        snprintf(text, sizeof(text), "FPS: %.2f", current_fps);
-        txt_params->display_text = g_strdup(text);
-        txt_params->x_offset = 20;
-        txt_params->y_offset = 20;
-        txt_params->font_params.font_name = (char*)"Arial";
-        txt_params->font_params.font_size = 14;
-        txt_params->font_params.font_color = (NvOSD_ColorParams){1.0, 1.0, 1.0, 1.0}; // Putih
-        txt_params->set_bg_clr = 1;
-        txt_params->text_bg_clr = (NvOSD_ColorParams){0.0, 0.0, 0.0, 0.5}; // Hitam Transparan
-        
-        nvds_add_display_meta_to_frame(frame_meta, display_meta);
-
-        // 2. AMBIL DATA LATENSI PIPELINE
-        // Catatan: Untuk breakdown spesifik pre, infer, post, nms secara murni, DeepStream menyatukannya di dalam nvinfer.
-        // Kita bisa mengambil total waktu pgie lewat timestamp masuk dan keluar elemen pgie.
-        double total_latency = 0.0;
-        // Deepstream menyediakan API nvds_measure_buffer_latency jika diaktifkan di env.
-        
-        // Kirim data dasar ke Queue Logger (Non-Blocking)
-        // Kita kirim sampling setiap 1 detik saja agar file log sinkron dengan log hardware
-        static auto last_log_time = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
-            BenchmarkData *data = g_new0(BenchmarkData, 1);
-            data->fps = current_fps;
-            
-            // Ambil waktu lokal saat ini untuk sinkronisasi
-            char ts[32];
-            time_t now = time(0);
-            strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
-            data->timestamp = std::string(ts);
-
-            g_async_queue_push(logger_queue, data); // Dilempar ke thread sebelah dalam hitungan mikrodetik!
-            last_log_time = std::chrono::steady_clock::now();
-        }
-    }
-    return GST_PAD_PROBE_OK;
-}
-
-void hardware_monitor_thread() {
-    while (loop && g_main_loop_is_running(loop)) {
-        // 1. Membaca Penggunaan GPU pada Jetson Orin
-        std::ifstream gpu_file("/sys/devices/platform/13e00000.host1x/15340000.gpu/load");
-        if (gpu_file.is_open()) {
-            int gpu_load;
-            gpu_file >> gpu_load;
-            current_gpu = gpu_load / 10.0; // Mengubah ke persentase (skala Jetson biasanya per-mille)
-            gpu_file.close();
-        }
-
-        // 2. Membaca Penggunaan Daya (Total Power dalam miliWatt / mW)
-        // Jalur ini bervariasi tergantung versi Jetpack (Contoh di bawah untuk Orin Nano/NX via INA3221)
-        std::ifstream power_file("/sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon1/power1_input");
-        if (power_file.is_open()) {
-            power_file >> current_power;
-            power_file.close();
-        }
-
-        // 3. Membaca CPU (Sederhananya bisa mengambil rata-rata load dari /proc/loadavg)
-        std::ifstream cpu_file("/proc/loadavg");
-        if (cpu_file.is_open()) {
-            float load_1min;
-            cpu_file >> load_1min;
-            current_cpu = (load_1min / std::thread::hardware_concurrency()) * 100.0;
-            cpu_file.close();
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(950)); // Update setiap ~1 detik
-    }
-}
-
-void async_logger_worker() {
-    std::ofstream log_file("benchmark_result.csv", std::ios::app);
-    // Tulis header jika file baru
-    log_file << "Timestamp,FPS,CPU_Usage_Persen,GPU_Usage_Persen,Power_mW,Akurasi_Simulasi\n";
-
-    while (true) {
-        // pop() akan memblokir thread ini (BUKAN pipeline) jika queue kosong, hemat resource CPU
-	BenchmarkData *data = (BenchmarkData *)g_async_queue_pop(logger_queue);
-
-        // Cek apakah ini 'Poison Pill' (Sinyal untuk berhenti)
-        if (data->fps == -1.0) {
-            g_free(data);
-            break;
-        }
-
-        // Gabungkan data pipeline dengan data hardware yang paling baru (SINKRON!)
-        data->cpu_usage = current_cpu;
-        data->gpu_usage = current_gpu;
-        data->power_mw = current_power;
-
-        // Tulis ke CSV
-        log_file << data->timestamp << ","
-                 << data->fps << ","
-                 << data->cpu_usage << ","
-                 << data->gpu_usage << ","
-                 << data->power_mw << ","
-                 << "0.0" << "\n"; // Akurasi diisi offline (lihat penjelasan di bawah)
-
-        log_file.flush(); // Paksa tulis ke disk di thread ini
-        g_free(data);
-    }
-    log_file.close();
 }
 
 int main(int argc, char *argv[]) {
@@ -389,30 +230,9 @@ int main(int argc, char *argv[]) {
         g_print("*** Output akan disimpan ke: %s ***\n", output_file.c_str());
     }
 
-    // OSD FPS
-    GstPad *osd_sink_pad = gst_element_get_static_pad(nvosd, "sink");
-    gst_pad_add_probe(osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER, osd_sink_pad_buffer_probe, NULL, NULL);
-    gst_object_unref(osd_sink_pad);
-
     // 6. Jalankan Pipeline
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
-
-    logger_queue = g_async_queue_new();
-
-    std::thread hw_thread(hardware_monitor_thread);
-    std::thread log_thread(async_logger_worker);
-
     g_main_loop_run(loop);
-
-    // Setelah loop berhenti (Ctrl+C ditekan), kirim 'Poison Pill'
-    BenchmarkData *stop_signal = g_new0(BenchmarkData, 1);
-    stop_signal->fps = -1.0;
-    g_async_queue_push(logger_queue, stop_signal);
-
-    hw_thread.join();
-    log_thread.join();
-
-    g_async_queue_unref(logger_queue);
 
     // 7. Bersihkan Resource saat program dimatikan
     g_print("Membersihkan resource...\n");
