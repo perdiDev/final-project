@@ -49,7 +49,7 @@ nvbuf-memory-type=0
 # Sink 0: tampilan monitor lokal dimatikan (mode headless)
 [sink0]
 enable=0
-type=2
+type=3
 
 # Sink 2: stream balik via RTSP, ditonton dari Arch Linux
 [sink2]
@@ -78,4 +78,4 @@ nvbuf-memory-type=0
 enable=1
 gpu-id=0
 gie-unique-id=1
-config-file=pgie2_yolov8n.txt
+config-file=pgie_yolov8n.txt
