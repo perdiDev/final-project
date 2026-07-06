@@ -4,6 +4,8 @@
 #include <signal.h>
 #include <iostream>
 #include <string>
+#include <stdlib.h>
+
 
 // Variabel Global
 GMainLoop *loop = NULL;
@@ -154,6 +156,20 @@ int main(int argc, char *argv[]) {
             g_printerr("Input file path harus diisi dengan --input-file\n");
             return -1;
         }
+
+	// Jika user tidak memasukkan "://" (misal lupa file://), ubah otomatis
+	if (input_file.find("://") == std::string::npos) {
+            char *abs_path = realpath(input_file.c_str(), NULL);
+            if (abs_path != NULL) {
+                input_file = "file://" + std::string(abs_path);
+                free(abs_path);
+            } else {
+                g_printerr("ERROR: File video tidak ditemukan di: %s\n", input_file.c_str());
+                return -1;
+            }
+            g_print("Auto-koreksi URI menjadi: %s\n", input_file.c_str());
+        }
+
         GstElement *source = gst_element_factory_make("uridecodebin", "uri-decode-bin");
         g_object_set(G_OBJECT(source), "uri", input_file.c_str(), NULL);
         gst_bin_add(GST_BIN(pipeline), source);
