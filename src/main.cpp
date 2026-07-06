@@ -3,9 +3,24 @@
 #include <glib.h>
 #include <iostream>
 
+GMainLoop *loop = NULL;
+
+// Handler untuk menangkap Ctrl+C
+static void signal_handler(int sig) {
+    g_print("\nCtrl+C ditekan, mematikan pipeline...\n");
+    if (loop) {
+        g_main_loop_quit(loop); // Menghentikan loop utama
+    }
+}
+
 int main(int argc, char *argv[]) {
     gst_init(&argc, &argv);
-    GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+
+    // Mendaftarkan sinyal Ctrl+C
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
+    loop = g_main_loop_new(NULL, FALSE);
 
     GstElement *pipeline = gst_pipeline_new("zed-yolo-rtsp-pipeline");
     
@@ -97,6 +112,7 @@ int main(int argc, char *argv[]) {
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
     g_main_loop_run(loop);
 
+    g_print("Membersihkan resource...\n");
     gst_element_set_state(pipeline, GST_STATE_NULL);
     gst_object_unref(pipeline);
     g_main_loop_unref(loop);
