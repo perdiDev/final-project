@@ -28,3 +28,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     nvdsgst_meta
     nvds_meta
 )
+
+# --- Build aplikasi Parser Log terpisah ---
+add_executable(LogParser src/log_parser.cpp)
+# LogParser hanya menggunakan library standar C++ bawaan, tidak perlu link GStreamer

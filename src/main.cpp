@@ -16,11 +16,6 @@
 // Struktur untuk menampung data benchmark per interval waktu/frame
 struct BenchmarkData {
     double fps;
-    double total_latency_ms;
-    double pgie_latency_ms; // Gabungan pre-process + infer + post-process di nvinfer
-    float cpu_usage;
-    float gpu_usage;
-    float power_mw;
     std::string timestamp;
 };
 
@@ -31,17 +26,18 @@ GAsyncQueue *logger_queue = NULL;
 GMainLoop *loop = NULL;
 GstElement *pipeline = NULL;
 
-// Variabel global untuk menampung status hardware terakhir
-float current_cpu = 0.0;
-float current_gpu = 0.0;
-float current_power = 0.0;
+bool enable_benchmark = false;
+std::string benchmark_filename = "benchmark_result.txt";
+bool is_saving_file = false; // <-- TAMBAHKAN INI
 
 // Handler Ctrl+C
 static void signal_handler(int sig) {
-    g_print("\nCtrl+C ditekan. Mengirim sinyal EOS untuk menyimpan MP4 dengan aman...\n");
-    if (pipeline) {
-        // Mengirim sinyal End of Stream ke pipeline
+    if (is_saving_file && pipeline) {
+        g_print("\nCtrl+C ditekan. Mengirim sinyal EOS untuk menyimpan MP4 dengan aman...\n");
         gst_element_send_event(pipeline, gst_event_new_eos());
+    } else {
+        g_print("\nCtrl+C ditekan. Mematikan kamera dan pipeline secara paksa...\n");
+        if (loop) g_main_loop_quit(loop);
     }
 }
 
@@ -130,68 +126,50 @@ static GstPadProbeReturn osd_sink_pad_buffer_probe(GstPad *pad, GstPadProbeInfo 
         
         nvds_add_display_meta_to_frame(frame_meta, display_meta);
 
-        // 2. AMBIL DATA LATENSI PIPELINE
-        // Catatan: Untuk breakdown spesifik pre, infer, post, nms secara murni, DeepStream menyatukannya di dalam nvinfer.
-        // Kita bisa mengambil total waktu pgie lewat timestamp masuk dan keluar elemen pgie.
-        double total_latency = 0.0;
-        // Deepstream menyediakan API nvds_measure_buffer_latency jika diaktifkan di env.
-        
-        // Kirim data dasar ke Queue Logger (Non-Blocking)
-        // Kita kirim sampling setiap 1 detik saja agar file log sinkron dengan log hardware
-        static auto last_log_time = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
-            BenchmarkData *data = g_new0(BenchmarkData, 1);
-            data->fps = current_fps;
-            
-            // Ambil waktu lokal saat ini untuk sinkronisasi
-            char ts[32];
-            time_t now = time(0);
-            strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
-            data->timestamp = std::string(ts);
+	if (enable_benchmark) {
+		// 2. AMBIL DATA LATENSI PIPELINE
+		// Catatan: Untuk breakdown spesifik pre, infer, post, nms secara murni, DeepStream menyatukannya di dalam nvinfer.
+		// Kita bisa mengambil total waktu pgie lewat timestamp masuk dan keluar elemen pgie.
+		double total_latency = 0.0;
+		// Deepstream menyediakan API nvds_measure_buffer_latency jika diaktifkan di env.
+		
+		// Kirim data dasar ke Queue Logger (Non-Blocking)
+		// Kita kirim sampling setiap 1 detik saja agar file log sinkron dengan log hardware
+		static auto last_log_time = std::chrono::steady_clock::now();
+		if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
+		    BenchmarkData *data = g_new0(BenchmarkData, 1);
+		    data->fps = current_fps;
+		    
+		    // Ambil waktu lokal saat ini untuk sinkronisasi
+		    char ts[32];
+		    time_t now = time(0);
+		    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
+		    data->timestamp = std::string(ts);
 
-            g_async_queue_push(logger_queue, data); // Dilempar ke thread sebelah dalam hitungan mikrodetik!
-            last_log_time = std::chrono::steady_clock::now();
-        }
+		    g_async_queue_push(logger_queue, data); // Dilempar ke thread sebelah dalam hitungan mikrodetik!
+		    last_log_time = std::chrono::steady_clock::now();
+		}
+	}
     }
     return GST_PAD_PROBE_OK;
 }
 
-void hardware_monitor_thread() {
-    while (loop && g_main_loop_is_running(loop)) {
-        // 1. Membaca Penggunaan GPU pada Jetson Orin
-        std::ifstream gpu_file("/sys/devices/platform/13e00000.host1x/15340000.gpu/load");
-        if (gpu_file.is_open()) {
-            int gpu_load;
-            gpu_file >> gpu_load;
-            current_gpu = gpu_load / 10.0; // Mengubah ke persentase (skala Jetson biasanya per-mille)
-            gpu_file.close();
-        }
-
-        // 2. Membaca Penggunaan Daya (Total Power dalam miliWatt / mW)
-        // Jalur ini bervariasi tergantung versi Jetpack (Contoh di bawah untuk Orin Nano/NX via INA3221)
-        std::ifstream power_file("/sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon1/power1_input");
-        if (power_file.is_open()) {
-            power_file >> current_power;
-            power_file.close();
-        }
-
-        // 3. Membaca CPU (Sederhananya bisa mengambil rata-rata load dari /proc/loadavg)
-        std::ifstream cpu_file("/proc/loadavg");
-        if (cpu_file.is_open()) {
-            float load_1min;
-            cpu_file >> load_1min;
-            current_cpu = (load_1min / std::thread::hardware_concurrency()) * 100.0;
-            cpu_file.close();
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(950)); // Update setiap ~1 detik
-    }
-}
-
 void async_logger_worker() {
-    std::ofstream log_file("benchmark_result.csv", std::ios::app);
-    // Tulis header jika file baru
-    log_file << "Timestamp,FPS,CPU_Usage_Persen,GPU_Usage_Persen,Power_mW,Akurasi_Simulasi\n";
+    // 1. Cek apakah file sudah ada dan ada isinya (mencegah duplikasi header)
+    bool is_new_file = false;
+    std::ifstream check_file(benchmark_filename);
+    if (!check_file.is_open() || check_file.peek() == std::ifstream::traits_type::eof()) {
+        is_new_file = true;
+    }
+    check_file.close();
+
+    // Buka file mode append
+    std::ofstream log_file(benchmark_filename, std::ios::app);
+    
+    // 2. Tulis header HANYA jika file baru, dan PASTIKAN ada \n
+    if (is_new_file) {
+        log_file << "Timestamp,FPS\n";
+    }
 
     while (true) {
         // pop() akan memblokir thread ini (BUKAN pipeline) jika queue kosong, hemat resource CPU
@@ -203,26 +181,27 @@ void async_logger_worker() {
             break;
         }
 
-        // Gabungkan data pipeline dengan data hardware yang paling baru (SINKRON!)
-        data->cpu_usage = current_cpu;
-        data->gpu_usage = current_gpu;
-        data->power_mw = current_power;
-
         // Tulis ke CSV
-        log_file << data->timestamp << ","
-                 << data->fps << ","
-                 << data->cpu_usage << ","
-                 << data->gpu_usage << ","
-                 << data->power_mw << ","
-                 << "0.0" << "\n"; // Akurasi diisi offline (lihat penjelasan di bawah)
+        log_file << data->timestamp << "," << data->fps << std::endl; 
 
-        log_file.flush(); // Paksa tulis ke disk di thread ini
         g_free(data);
     }
     log_file.close();
 }
 
 int main(int argc, char *argv[]) {
+
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--benchmark") {
+            enable_benchmark = true;
+
+            // Cek apakah ada argumen SETELAH --benchmark dan argumen tersebut bukan flag (tidak diawali '-')
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                benchmark_filename = argv[i + 1];
+                i++; // Lompati argumen nama file ini agar tidak dibaca lagi oleh argumen lain
+            }
+        }
+    }
     gst_init(&argc, &argv);
 
     // 1. Konfigurasi Default
@@ -238,7 +217,10 @@ int main(int argc, char *argv[]) {
         if (arg == "--config" && i + 1 < argc) config_path = argv[++i];
         else if (arg == "--input" && i + 1 < argc) input_type = argv[++i];
         else if (arg == "--input-file" && i + 1 < argc) input_file = argv[++i];
-        else if (arg == "--output" && i + 1 < argc) output_type = argv[++i];
+        else if (arg == "--output" && i + 1 < argc) {
+		output_type = argv[++i];
+		if (output_type == "file") is_saving_file = true;
+	}
         else if (arg == "--output-file" && i + 1 < argc) output_file = argv[++i];
         else if (arg == "--help" || arg == "-h") {
             g_print("\nPenggunaan:\n");
@@ -397,22 +379,29 @@ int main(int argc, char *argv[]) {
     // 6. Jalankan Pipeline
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
 
-    logger_queue = g_async_queue_new();
+    std::thread log_thread;
 
-    std::thread hw_thread(hardware_monitor_thread);
-    std::thread log_thread(async_logger_worker);
+    // 2. NYALAKAN THREAD HANYA JIKA BENCHMARK AKTIF
+    if (enable_benchmark) {
+        g_print("\n=== BENCHMARK AKTIF ===\n");
+        g_print("Menyimpan log ke: %s\n\n", benchmark_filename.c_str());
 
+        logger_queue = g_async_queue_new();
+        log_thread = std::thread(async_logger_worker);
+    }
+
+    g_print("Menjalankan pipeline...\n");
     g_main_loop_run(loop);
 
     // Setelah loop berhenti (Ctrl+C ditekan), kirim 'Poison Pill'
-    BenchmarkData *stop_signal = g_new0(BenchmarkData, 1);
-    stop_signal->fps = -1.0;
-    g_async_queue_push(logger_queue, stop_signal);
+    if (enable_benchmark) {
+        BenchmarkData *stop_signal = g_new0(BenchmarkData, 1);
+        stop_signal->fps = -1.0;
+        g_async_queue_push(logger_queue, stop_signal);
 
-    hw_thread.join();
-    log_thread.join();
-
-    g_async_queue_unref(logger_queue);
+        if (log_thread.joinable()) log_thread.join();
+        g_async_queue_unref(logger_queue);
+    }
 
     // 7. Bersihkan Resource saat program dimatikan
     g_print("Membersihkan resource...\n");
