@@ -3,9 +3,16 @@
 # ==============================================================================
 # KONFIGURASI FILE
 # ==============================================================================
-RAW_LOG="raw_hw.log"
-HW_CSV="hardware_log.csv"
-FPS_CSV="fps_log.csv"
+OUTPUT_DIR="data/benchmark"
+
+# Pastikan folder ada, jika belum, buat otomatis
+mkdir -p "$OUTPUT_DIR"
+
+# Definisi file path di dalam folder tersebut
+FPS_CSV="$OUTPUT_DIR/fps.csv"
+RAW_LOG="$OUTPUT_DIR/raw_hw.log"
+HW_CSV="$OUTPUT_DIR/hardware_analysis.csv"
+
 CONFIG_FILE="config/pgie_coco.txt"
 
 # ==============================================================================
