@@ -16,6 +16,7 @@
 // Struktur untuk menampung data benchmark per interval waktu/frame
 struct BenchmarkData {
     double fps;
+    double latency;
     std::string timestamp;
 };
 
@@ -109,7 +110,7 @@ static GstPadProbeReturn osd_sink_pad_buffer_probe(GstPad *pad, GstPadProbeInfo 
         NvDsFrameMeta *frame_meta = (NvDsFrameMeta *)(l_frame->data);
 
         // 1. TAMPILKAN FPS KE OSD
-	NvDsDisplayMeta *display_meta = nvds_acquire_display_meta_from_pool(batch_meta);
+        NvDsDisplayMeta *display_meta = nvds_acquire_display_meta_from_pool(batch_meta);
         NvOSD_TextParams *txt_params  = &display_meta->text_params[0];
         display_meta->num_labels = 1;
         
@@ -126,30 +127,29 @@ static GstPadProbeReturn osd_sink_pad_buffer_probe(GstPad *pad, GstPadProbeInfo 
         
         nvds_add_display_meta_to_frame(frame_meta, display_meta);
 
-	if (enable_benchmark) {
-		// 2. AMBIL DATA LATENSI PIPELINE
-		// Catatan: Untuk breakdown spesifik pre, infer, post, nms secara murni, DeepStream menyatukannya di dalam nvinfer.
-		// Kita bisa mengambil total waktu pgie lewat timestamp masuk dan keluar elemen pgie.
-		double total_latency = 0.0;
-		// Deepstream menyediakan API nvds_measure_buffer_latency jika diaktifkan di env.
-		
-		// Kirim data dasar ke Queue Logger (Non-Blocking)
-		// Kita kirim sampling setiap 1 detik saja agar file log sinkron dengan log hardware
-		static auto last_log_time = std::chrono::steady_clock::now();
-		if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
-		    BenchmarkData *data = g_new0(BenchmarkData, 1);
-		    data->fps = current_fps;
-		    
-		    // Ambil waktu lokal saat ini untuk sinkronisasi
-		    char ts[32];
-		    time_t now = time(0);
-		    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
-		    data->timestamp = std::string(ts);
+        if (enable_benchmark) {
+            // 2. AMBIL DATA LATENSI PIPELINE NATIVE DEEPSTREAM
+            NvDsFrameLatencyInfo latency_info[1]; 
+            nvds_measure_buffer_latency(buf, latency_info);
+            double current_latency = latency_info[0].latency;
+            
+            // Kirim data dasar ke Queue Logger (Non-Blocking) setiap 1 detik
+            static auto last_log_time = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
+                BenchmarkData *data = g_new0(BenchmarkData, 1);
+                data->fps = current_fps;
+                data->latency = current_latency; // Mencatat nilai latensi murni
+                
+                // Ambil waktu lokal saat ini untuk sinkronisasi
+                char ts[32];
+                time_t now = time(0);
+                strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
+                data->timestamp = std::string(ts);
 
-		    g_async_queue_push(logger_queue, data); // Dilempar ke thread sebelah dalam hitungan mikrodetik!
-		    last_log_time = std::chrono::steady_clock::now();
-		}
-	}
+                g_async_queue_push(logger_queue, data); 
+                last_log_time = std::chrono::steady_clock::now();
+            }
+        }
     }
     return GST_PAD_PROBE_OK;
 }
@@ -166,14 +166,14 @@ void async_logger_worker() {
     // Buka file mode append
     std::ofstream log_file(benchmark_filename, std::ios::app);
     
-    // 2. Tulis header HANYA jika file baru, dan PASTIKAN ada \n
+    // 2. Tulis header jika file baru (menambahkan kolom Latency)
     if (is_new_file) {
-        log_file << "Timestamp,FPS\n";
+        log_file << "Timestamp,FPS,Latency_ms\n";
     }
 
     while (true) {
-        // pop() akan memblokir thread ini (BUKAN pipeline) jika queue kosong, hemat resource CPU
-	BenchmarkData *data = (BenchmarkData *)g_async_queue_pop(logger_queue);
+        // pop() akan memblokir thread ini jika queue kosong
+        BenchmarkData *data = (BenchmarkData *)g_async_queue_pop(logger_queue);
 
         // Cek apakah ini 'Poison Pill' (Sinyal untuk berhenti)
         if (data->fps == -1.0) {
@@ -181,8 +181,8 @@ void async_logger_worker() {
             break;
         }
 
-        // Tulis ke CSV
-        log_file << data->timestamp << "," << data->fps << std::endl; 
+        // Tulis ke CSV dengan tambahan nilai latensi
+        log_file << data->timestamp << "," << data->fps << "," << data->latency << std::endl; 
 
         g_free(data);
     }
