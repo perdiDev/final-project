@@ -1,413 +1,1034 @@
 #include <gst/gst.h>
 #include <gst/rtsp-server/rtsp-server.h>
+#include <glib-unix.h>
 #include <glib.h>
-#include <signal.h>
-#include <iostream>
-#include <string>
-#include <stdlib.h>
-#include <chrono>
-#include <thread>
-#include <fstream>
 
 #include <nvdsmeta.h>
 #include <gstnvdsmeta.h>
 #include <nvll_osd_struct.h>
 
-// Struktur untuk menampung data benchmark per interval waktu/frame
+#include <array>
+#include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <exception>
+#include <fstream>
+#include <initializer_list>
+#include <memory>
+#include <new>
+#include <string>
+#include <thread>
+#include <utility>
+
+namespace {
+
+using SteadyClock = std::chrono::steady_clock;
+
+constexpr guint kStreamWidth = 1280;
+constexpr guint kStreamHeight = 720;
+constexpr guint kStreamMuxBatchSize = 1;
+constexpr guint kStreamMuxTimeoutUs = 40000;
+constexpr guint kUdpPort = 5400;
+constexpr guint kRtspPort = 8554;
+constexpr guint kEncoderBitrateBps = 4'000'000;
+constexpr guint kSoftwareEncoderBitrateKbps = 4000;
+constexpr guint kEosShutdownTimeoutSeconds = 10;
+constexpr char kRtspMountPoint[] = "/ds-test";
+
 struct BenchmarkData {
-    double fps;
-    double latency;
+    double fps{0.0};
+    double latencyMs{0.0};
     std::string timestamp;
 };
 
-// Queue thread-safe bawaan GLib untuk mencegah I/O Blocking
-GAsyncQueue *logger_queue = NULL;
+enum class InputMode {
+    Zed,
+    File,
+};
 
-// Variabel Global
-GMainLoop *loop = NULL;
-GstElement *pipeline = NULL;
+enum class OutputMode {
+    Rtsp,
+    Monitor,
+    File,
+};
 
-bool enable_benchmark = false;
-std::string benchmark_filename = "benchmark_result.txt";
-bool is_saving_file = false; // <-- TAMBAHKAN INI
+struct AppConfig {
+    std::string inferenceConfigPath{"config/pgie_yolov8n.txt"};
+    InputMode inputMode{InputMode::Zed};
+    std::string inputFile;
+    OutputMode outputMode{OutputMode::Rtsp};
+    std::string outputFile{"output.mp4"};
+    bool benchmarkEnabled{false};
+    std::string benchmarkFile{"benchmark_result.txt"};
+};
 
-// Handler Ctrl+C
-static void signal_handler(int sig) {
-    if (is_saving_file && pipeline) {
-        g_print("\nCtrl+C ditekan. Mengirim sinyal EOS untuk menyimpan MP4 dengan aman...\n");
-        gst_element_send_event(pipeline, gst_event_new_eos());
-    } else {
-        g_print("\nCtrl+C ditekan. Mematikan kamera dan pipeline secara paksa...\n");
-        if (loop) g_main_loop_quit(loop);
-    }
+enum class ParseResult {
+    Run,
+    Help,
+    Error,
+};
+
+const char *toString(InputMode mode) {
+    return mode == InputMode::Zed ? "zed" : "file";
 }
 
-// Callback untuk uridecodebin (jika input dari File)
-// Tugasnya: Menyambungkan output dari file video ke dalam streammuxer
-static void cb_newpad(GstElement *decodebin, GstPad *pad, gpointer data) {
-    GstElement *streammux = (GstElement *)data;
-    GstCaps *caps = gst_pad_query_caps(pad, NULL);
-    const GstStructure *str = gst_caps_get_structure(caps, 0);
-    const gchar *name = gst_structure_get_name(str);
+const char *toString(OutputMode mode) {
+    switch (mode) {
+        case OutputMode::Rtsp:
+            return "rtsp";
+        case OutputMode::Monitor:
+            return "monitor";
+        case OutputMode::File:
+            return "file";
+    }
+    return "unknown";
+}
 
-    // Jika pad yang keluar adalah video, sambungkan ke streammux
-    if (g_str_has_prefix(name, "video/x-raw")) {
-        GstPad *sinkpad = gst_element_request_pad_simple(streammux, "sink_0");
-        if (gst_pad_link(pad, sinkpad) != GST_PAD_LINK_OK) {
-            g_printerr("Gagal menyambungkan decodebin ke streammux.\n");
+void printUsage(const char *programName) {
+    g_print("\nPenggunaan: %s [opsi]\n", programName);
+    g_print("  --config <path>              : Config nvinfer/YOLO (default: config/pgie_yolov8n.txt)\n");
+    g_print("  --input <zed|file>           : Sumber video (default: zed)\n");
+    g_print("  --input-file <path|URI>      : Video jika input=file\n");
+    g_print("  --output <rtsp|monitor|file> : Jenis output (default: rtsp)\n");
+    g_print("  --output-file <path>         : File MP4 jika output=file (default: output.mp4)\n");
+    g_print("  --benchmark [path]           : Aktifkan CSV benchmark (default: benchmark_result.txt)\n");
+    g_print("  --help, -h                   : Tampilkan bantuan ini\n\n");
+}
+
+bool readRequiredValue(int argc, char *argv[], int &index, const std::string &option,
+                       std::string &value) {
+    if (index + 1 >= argc || argv[index + 1][0] == '-') {
+        g_printerr("Opsi %s membutuhkan sebuah nilai.\n", option.c_str());
+        return false;
+    }
+
+    value = argv[++index];
+    return true;
+}
+
+ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string argument = argv[i];
+
+        if (argument == "--help" || argument == "-h") {
+            printUsage(argv[0]);
+            return ParseResult::Help;
         }
-        gst_object_unref(sinkpad);
-    }
-    gst_caps_unref(caps);
-}
 
-// Callback untuk mendengarkan pesan dari Bus GStreamer
-static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
-    GMainLoop *loop = (GMainLoop *)data;
-    switch (GST_MESSAGE_TYPE(msg)) {
-        case GST_MESSAGE_EOS:
-            g_print("End of stream (EOS) tercapai. Menutup pipeline dengan aman...\n");
-            g_main_loop_quit(loop); // Matikan program HANYA setelah file MP4 selesai ditulis
-            break;
-        case GST_MESSAGE_ERROR: {
-            gchar *debug;
-            GError *error;
-            gst_message_parse_error(msg, &error, &debug);
-            g_printerr("Error pada pipeline: %s\n", error->message);
-            g_error_free(error);
-            g_free(debug);
-            g_main_loop_quit(loop);
-            break;
+        if (argument == "--benchmark") {
+            config.benchmarkEnabled = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                config.benchmarkFile = argv[++i];
+            }
+            continue;
         }
-        default:
-            break;
-    }
-    return TRUE;
-}
 
-// Callback Probe pada Sink Pad nvosd (untuk hitung FPS & Latensi)
-static GstPadProbeReturn osd_sink_pad_buffer_probe(GstPad *pad, GstPadProbeInfo *info, gpointer u_data) {
-    GstBuffer *buf = (GstBuffer *) info->data;
-    NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta(buf);
-    
-    static auto start_time = std::chrono::steady_clock::now();
-    static int frame_count = 0;
-    static double current_fps = 0.0;
-
-    if (!batch_meta) return GST_PAD_PROBE_OK;
-
-    frame_count++;
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-    
-    // Hitung FPS setiap 1000ms (1 detik)
-    if (elapsed >= 1000) {
-        current_fps = (frame_count * 1000.0) / elapsed;
-        frame_count = 0;
-        start_time = std::chrono::steady_clock::now();
-    }
-
-    for (NvDsMetaList *l_frame = batch_meta->frame_meta_list; l_frame != NULL; l_frame = l_frame->next) {
-        NvDsFrameMeta *frame_meta = (NvDsFrameMeta *)(l_frame->data);
-
-        // 1. TAMPILKAN FPS KE OSD
-        NvDsDisplayMeta *display_meta = nvds_acquire_display_meta_from_pool(batch_meta);
-        NvOSD_TextParams *txt_params  = &display_meta->text_params[0];
-        display_meta->num_labels = 1;
-        
-        char text[64];
-        snprintf(text, sizeof(text), "FPS: %.2f", current_fps);
-        txt_params->display_text = g_strdup(text);
-        txt_params->x_offset = 20;
-        txt_params->y_offset = 20;
-        txt_params->font_params.font_name = (char*)"Arial";
-        txt_params->font_params.font_size = 14;
-        txt_params->font_params.font_color = (NvOSD_ColorParams){1.0, 1.0, 1.0, 1.0}; // Putih
-        txt_params->set_bg_clr = 1;
-        txt_params->text_bg_clr = (NvOSD_ColorParams){0.0, 0.0, 0.0, 0.5}; // Hitam Transparan
-        
-        nvds_add_display_meta_to_frame(frame_meta, display_meta);
-
-        if (enable_benchmark) {
-            // 2. AMBIL DATA LATENSI PIPELINE NATIVE DEEPSTREAM
-            NvDsFrameLatencyInfo latency_info[1]; 
-            nvds_measure_buffer_latency(buf, latency_info);
-            double current_latency = latency_info[0].latency;
-            
-            // Kirim data dasar ke Queue Logger (Non-Blocking) setiap 1 detik
-            static auto last_log_time = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_log_time).count() >= 1) {
-                BenchmarkData *data = g_new0(BenchmarkData, 1);
-                data->fps = current_fps;
-                data->latency = current_latency; // Mencatat nilai latensi murni
-                
-                // Ambil waktu lokal saat ini untuk sinkronisasi
-                char ts[32];
-                time_t now = time(0);
-                strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
-                data->timestamp = std::string(ts);
-
-                g_async_queue_push(logger_queue, data); 
-                last_log_time = std::chrono::steady_clock::now();
+        std::string value;
+        if (argument == "--config") {
+            if (!readRequiredValue(argc, argv, i, argument, value)) {
+                return ParseResult::Error;
+            }
+            config.inferenceConfigPath = std::move(value);
+        } else if (argument == "--input") {
+            if (!readRequiredValue(argc, argv, i, argument, value)) {
+                return ParseResult::Error;
+            }
+            if (value == "zed") {
+                config.inputMode = InputMode::Zed;
+            } else if (value == "file") {
+                config.inputMode = InputMode::File;
+            } else {
+                g_printerr("Input tidak dikenal: %s (gunakan zed atau file).\n", value.c_str());
+                return ParseResult::Error;
+            }
+        } else if (argument == "--input-file") {
+            if (!readRequiredValue(argc, argv, i, argument, config.inputFile)) {
+                return ParseResult::Error;
+            }
+        } else if (argument == "--output") {
+            if (!readRequiredValue(argc, argv, i, argument, value)) {
+                return ParseResult::Error;
+            }
+            if (value == "rtsp") {
+                config.outputMode = OutputMode::Rtsp;
+            } else if (value == "monitor") {
+                config.outputMode = OutputMode::Monitor;
+            } else if (value == "file") {
+                config.outputMode = OutputMode::File;
+            } else {
+                g_printerr("Output tidak dikenal: %s (gunakan rtsp, monitor, atau file).\n",
+                           value.c_str());
+                return ParseResult::Error;
+            }
+        } else if (argument == "--output-file") {
+            if (!readRequiredValue(argc, argv, i, argument, config.outputFile)) {
+                return ParseResult::Error;
             }
         }
     }
-    return GST_PAD_PROBE_OK;
+
+    if (config.inputMode == InputMode::File && config.inputFile.empty()) {
+        g_printerr("Input file harus diisi dengan --input-file.\n");
+        return ParseResult::Error;
+    }
+
+    return ParseResult::Run;
 }
 
-void async_logger_worker() {
-    // 1. Cek apakah file sudah ada dan ada isinya (mencegah duplikasi header)
-    bool is_new_file = false;
-    std::ifstream check_file(benchmark_filename);
-    if (!check_file.is_open() || check_file.peek() == std::ifstream::traits_type::eof()) {
-        is_new_file = true;
-    }
-    check_file.close();
+class DeepStreamApplication {
+public:
+    explicit DeepStreamApplication(AppConfig config) : config_(std::move(config)) {}
 
-    // Buka file mode append
-    std::ofstream log_file(benchmark_filename, std::ios::app);
-    
-    // 2. Tulis header jika file baru (menambahkan kolom Latency)
-    if (is_new_file) {
-        log_file << "Timestamp,FPS,Latency_ms\n";
+    ~DeepStreamApplication() {
+        cleanup();
     }
 
-    while (true) {
-        // pop() akan memblokir thread ini jika queue kosong
-        BenchmarkData *data = (BenchmarkData *)g_async_queue_pop(logger_queue);
+    DeepStreamApplication(const DeepStreamApplication &) = delete;
+    DeepStreamApplication &operator=(const DeepStreamApplication &) = delete;
 
-        // Cek apakah ini 'Poison Pill' (Sinyal untuk berhenti)
-        if (data->fps == -1.0) {
-            g_free(data);
-            break;
+    int run() {
+        printConfiguration();
+
+        mainLoop_ = g_main_loop_new(nullptr, FALSE);
+        if (mainLoop_ == nullptr) {
+            g_printerr("Gagal membuat GLib main loop.\n");
+            return EXIT_FAILURE;
         }
 
-        // Tulis ke CSV dengan tambahan nilai latensi
-        log_file << data->timestamp << "," << data->fps << "," << data->latency << std::endl; 
+        if (!buildPipeline() || !installEventSources() || !startBenchmarkLogger()) {
+            return EXIT_FAILURE;
+        }
 
-        g_free(data);
+        resetMetrics();
+        const GstStateChangeReturn stateResult =
+            gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+        if (stateResult == GST_STATE_CHANGE_FAILURE) {
+            g_printerr("Gagal menjalankan pipeline.\n");
+            return EXIT_FAILURE;
+        }
+
+        g_print("Menjalankan pipeline...\n");
+        g_main_loop_run(mainLoop_);
+        return pipelineError_ ? EXIT_FAILURE : EXIT_SUCCESS;
     }
-    log_file.close();
-}
+
+private:
+    struct MetricsState {
+        SteadyClock::time_point fpsWindowStart{SteadyClock::now()};
+        SteadyClock::time_point lastBenchmarkLog{SteadyClock::now()};
+        guint frameCount{0};
+        double currentFps{0.0};
+    };
+
+    void printConfiguration() const {
+        g_print("=== KONFIGURASI PIPELINE ===\n");
+        g_print("Config   : %s\n", config_.inferenceConfigPath.c_str());
+        g_print("Input    : %s %s\n", toString(config_.inputMode),
+                config_.inputMode == InputMode::File ? config_.inputFile.c_str() : "");
+        g_print("Output   : %s %s\n", toString(config_.outputMode),
+                config_.outputMode == OutputMode::File ? config_.outputFile.c_str() : "");
+        g_print("============================\n");
+    }
+
+    GstElement *createElement(const char *factoryName, const char *elementName) {
+        GstElement *element = gst_element_factory_make(factoryName, elementName);
+        if (element == nullptr) {
+            g_printerr("Gagal membuat elemen GStreamer '%s' (factory: %s).\n", elementName,
+                       factoryName);
+            return nullptr;
+        }
+
+        if (!gst_bin_add(GST_BIN(pipeline_), element)) {
+            g_printerr("Gagal menambahkan elemen '%s' ke pipeline.\n", elementName);
+            gst_object_unref(element);
+            return nullptr;
+        }
+
+        return element;
+    }
+
+    bool addCreatedElement(GstElement *element, const char *factoryName) {
+        if (element == nullptr) {
+            return false;
+        }
+
+        if (!gst_bin_add(GST_BIN(pipeline_), element)) {
+            g_printerr("Gagal menambahkan elemen dari factory '%s' ke pipeline.\n", factoryName);
+            gst_object_unref(element);
+            return false;
+        }
+        return true;
+    }
+
+    bool linkElements(std::initializer_list<GstElement *> elements) const {
+        GstElement *previous = nullptr;
+        for (GstElement *element : elements) {
+            if (element == nullptr) {
+                return false;
+            }
+            if (previous != nullptr && !gst_element_link(previous, element)) {
+                g_printerr("Gagal menghubungkan '%s' ke '%s'.\n", GST_ELEMENT_NAME(previous),
+                           GST_ELEMENT_NAME(element));
+                return false;
+            }
+            previous = element;
+        }
+        return true;
+    }
+
+    bool setCaps(GstElement *capsFilter, const char *capsDescription) const {
+        GstCaps *caps = gst_caps_from_string(capsDescription);
+        if (caps == nullptr) {
+            g_printerr("Caps GStreamer tidak valid: %s\n", capsDescription);
+            return false;
+        }
+
+        g_object_set(G_OBJECT(capsFilter), "caps", caps, nullptr);
+        gst_caps_unref(caps);
+        return true;
+    }
+
+    bool buildPipeline() {
+        pipeline_ = gst_pipeline_new("dynamic-yolo-pipeline");
+        if (pipeline_ == nullptr) {
+            g_printerr("Gagal membuat pipeline GStreamer.\n");
+            return false;
+        }
+
+        GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_));
+        if (bus == nullptr) {
+            g_printerr("Gagal mengambil bus GStreamer.\n");
+            return false;
+        }
+        busWatchId_ = gst_bus_add_watch(bus, &DeepStreamApplication::onBusMessage, this);
+        gst_object_unref(bus);
+        if (busWatchId_ == 0) {
+            g_printerr("Gagal memasang GStreamer bus watch.\n");
+            return false;
+        }
+
+        GstElement *streamMux = createElement("nvstreammux", "stream-muxer");
+        GstElement *primaryInference = createElement("nvinfer", "primary-inference");
+        GstElement *preOsdConverter =
+            createElement("nvvideoconvert", "pre-osd-converter");
+        GstElement *osd = createElement("nvdsosd", "nv-onscreendisplay");
+        GstElement *outputConverter =
+            createElement("nvvideoconvert", "output-converter");
+        if (streamMux == nullptr || primaryInference == nullptr || preOsdConverter == nullptr ||
+            osd == nullptr || outputConverter == nullptr) {
+            return false;
+        }
+
+        streamMux_ = streamMux;
+        g_object_set(G_OBJECT(streamMux_), "batch-size", kStreamMuxBatchSize, "width",
+                     kStreamWidth, "height", kStreamHeight, "batched-push-timeout",
+                     kStreamMuxTimeoutUs, "live-source",
+                     config_.inputMode == InputMode::Zed ? TRUE : FALSE, nullptr);
+
+        // The DeepStream nvinfer configuration still owns the YOLO parser, custom library,
+        // model, labels, and TensorRT engine settings.
+        g_object_set(G_OBJECT(primaryInference), "config-file-path",
+                     config_.inferenceConfigPath.c_str(), nullptr);
+
+        if (!linkElements(
+                {streamMux_, primaryInference, preOsdConverter, osd, outputConverter})) {
+            return false;
+        }
+        if (!buildInput()) {
+            return false;
+        }
+        if (!buildOutput(outputConverter)) {
+            return false;
+        }
+        return installOsdProbe(osd);
+    }
+
+    bool requestStreamMuxPad() {
+        streamMuxSinkPad_ = gst_element_request_pad_simple(streamMux_, "sink_0");
+        if (streamMuxSinkPad_ == nullptr) {
+            g_printerr("Gagal meminta pad sink_0 dari nvstreammux.\n");
+            return false;
+        }
+        return true;
+    }
+
+    bool buildInput() {
+        if (!requestStreamMuxPad()) {
+            return false;
+        }
+
+        if (config_.inputMode == InputMode::Zed) {
+            return buildZedInput();
+        }
+        return buildFileInput();
+    }
+
+    bool buildZedInput() {
+        GstElement *source = createElement("zedsrc", "zed-source");
+        GstElement *cpuConverter = createElement("videoconvert", "zed-cpu-converter");
+        GstElement *yuy2Caps = createElement("capsfilter", "zed-yuy2-caps");
+        GstElement *nvmmConverter =
+            createElement("nvvideoconvert", "zed-nvmm-converter");
+        GstElement *nvmmCaps = createElement("capsfilter", "zed-nvmm-caps");
+        if (source == nullptr || cpuConverter == nullptr || yuy2Caps == nullptr ||
+            nvmmConverter == nullptr || nvmmCaps == nullptr) {
+            return false;
+        }
+
+        g_object_set(G_OBJECT(source), "stream-type", 0, nullptr);
+        if (!setCaps(yuy2Caps, "video/x-raw, format=(string)YUY2") ||
+            !setCaps(nvmmCaps,
+                     "video/x-raw(memory:NVMM), format=(string)NV12, width=(int)1280, "
+                     "height=(int)720") ||
+            !linkElements({source, cpuConverter, yuy2Caps, nvmmConverter, nvmmCaps})) {
+            return false;
+        }
+
+        GstPad *sourcePad = gst_element_get_static_pad(nvmmCaps, "src");
+        if (sourcePad == nullptr) {
+            g_printerr("Gagal mengambil source pad dari input ZED.\n");
+            return false;
+        }
+
+        const GstPadLinkReturn linkResult = gst_pad_link(sourcePad, streamMuxSinkPad_);
+        gst_object_unref(sourcePad);
+        if (linkResult != GST_PAD_LINK_OK) {
+            g_printerr("Gagal menghubungkan input ZED ke nvstreammux: %s.\n",
+                       gst_pad_link_get_name(linkResult));
+            return false;
+        }
+        return true;
+    }
+
+    bool normalizeInputUri() {
+        if (config_.inputFile.find("://") != std::string::npos) {
+            return true;
+        }
+
+        std::unique_ptr<char, decltype(&std::free)> absolutePath(
+            realpath(config_.inputFile.c_str(), nullptr), &std::free);
+        if (!absolutePath) {
+            g_printerr("File video tidak ditemukan: %s\n", config_.inputFile.c_str());
+            return false;
+        }
+
+        GError *error = nullptr;
+        gchar *uri = gst_filename_to_uri(absolutePath.get(), &error);
+        if (uri == nullptr) {
+            g_printerr("Gagal mengubah path video menjadi URI: %s\n",
+                       error != nullptr ? error->message : "unknown error");
+            g_clear_error(&error);
+            return false;
+        }
+
+        config_.inputFile = uri;
+        g_free(uri);
+        g_print("Auto-koreksi URI menjadi: %s\n", config_.inputFile.c_str());
+        return true;
+    }
+
+    bool buildFileInput() {
+        if (!normalizeInputUri()) {
+            return false;
+        }
+
+        GstElement *source = createElement("uridecodebin", "uri-decode-bin");
+        GstElement *converter =
+            createElement("nvvideoconvert", "file-input-nvmm-converter");
+        GstElement *nvmmCaps = createElement("capsfilter", "file-input-nvmm-caps");
+        if (source == nullptr || converter == nullptr || nvmmCaps == nullptr) {
+            return false;
+        }
+
+        if (!setCaps(nvmmCaps, "video/x-raw(memory:NVMM), format=(string)NV12") ||
+            !linkElements({converter, nvmmCaps})) {
+            return false;
+        }
+
+        fileDecodeSinkPad_ = gst_element_get_static_pad(converter, "sink");
+        GstPad *sourcePad = gst_element_get_static_pad(nvmmCaps, "src");
+        if (fileDecodeSinkPad_ == nullptr || sourcePad == nullptr) {
+            g_printerr("Gagal mengambil pad konverter untuk input file.\n");
+            if (sourcePad != nullptr) {
+                gst_object_unref(sourcePad);
+            }
+            return false;
+        }
+
+        const GstPadLinkReturn linkResult = gst_pad_link(sourcePad, streamMuxSinkPad_);
+        gst_object_unref(sourcePad);
+        if (linkResult != GST_PAD_LINK_OK) {
+            g_printerr("Gagal menghubungkan konverter input file ke nvstreammux: %s.\n",
+                       gst_pad_link_get_name(linkResult));
+            return false;
+        }
+
+        g_object_set(G_OBJECT(source), "uri", config_.inputFile.c_str(), nullptr);
+        g_signal_connect(source, "pad-added", G_CALLBACK(&DeepStreamApplication::onDecodePadAdded),
+                         this);
+        return true;
+    }
+
+    bool createEncoder(GstElement *&capsFilter, GstElement *&encoder, bool lowLatency) {
+        capsFilter = createElement("capsfilter", "encoder-input-caps");
+        if (capsFilter == nullptr) {
+            return false;
+        }
+
+        encoder = gst_element_factory_make("nvv4l2h264enc", "h264-encoder");
+        if (encoder != nullptr) {
+            if (!addCreatedElement(encoder, "nvv4l2h264enc")) {
+                encoder = nullptr;
+                return false;
+            }
+            if (!setCaps(capsFilter,
+                         "video/x-raw(memory:NVMM), format=(string)NV12, width=(int)1280, "
+                         "height=(int)720")) {
+                return false;
+            }
+            g_object_set(G_OBJECT(encoder), "bitrate", kEncoderBitrateBps, "insert-sps-pps",
+                         TRUE, nullptr);
+            g_print("Menggunakan hardware encoder Jetson nvv4l2h264enc.\n");
+            return true;
+        }
+
+        g_printerr("nvv4l2h264enc tidak tersedia; menggunakan fallback x264enc.\n");
+        encoder = gst_element_factory_make("x264enc", "h264-encoder");
+        if (!addCreatedElement(encoder, "x264enc")) {
+            encoder = nullptr;
+            return false;
+        }
+        if (!setCaps(capsFilter,
+                     "video/x-raw, format=(string)I420, width=(int)1280, height=(int)720")) {
+            return false;
+        }
+
+        if (lowLatency) {
+            g_object_set(G_OBJECT(encoder), "bitrate", kSoftwareEncoderBitrateKbps,
+                         "speed-preset", 1, "tune", 4, nullptr);
+        } else {
+            g_object_set(G_OBJECT(encoder), "bitrate", kSoftwareEncoderBitrateKbps,
+                         "speed-preset", 1, nullptr);
+        }
+        return true;
+    }
+
+    bool buildOutput(GstElement *outputConverter) {
+        switch (config_.outputMode) {
+            case OutputMode::Rtsp:
+                return buildRtspOutput(outputConverter);
+            case OutputMode::Monitor:
+                return buildMonitorOutput(outputConverter);
+            case OutputMode::File:
+                return buildFileOutput(outputConverter);
+        }
+        return false;
+    }
+
+    bool buildRtspOutput(GstElement *outputConverter) {
+        GstElement *encoderCaps = nullptr;
+        GstElement *encoder = nullptr;
+        if (!createEncoder(encoderCaps, encoder, true)) {
+            return false;
+        }
+
+        GstElement *rtpPayloader = createElement("rtph264pay", "rtp-payloader");
+        GstElement *udpSink = createElement("udpsink", "udp-sink");
+        if (rtpPayloader == nullptr || udpSink == nullptr) {
+            return false;
+        }
+
+        g_object_set(G_OBJECT(rtpPayloader), "pt", 96, "config-interval", 1, nullptr);
+        g_object_set(G_OBJECT(udpSink), "host", "127.0.0.1", "port", kUdpPort, "async",
+                     FALSE, "sync", FALSE, nullptr);
+        if (!linkElements({outputConverter, encoderCaps, encoder, rtpPayloader, udpSink})) {
+            return false;
+        }
+
+        return startRtspServer();
+    }
+
+    bool startRtspServer() {
+        rtspServer_ = gst_rtsp_server_new();
+        if (rtspServer_ == nullptr) {
+            g_printerr("Gagal membuat RTSP server.\n");
+            return false;
+        }
+
+        const std::string service = std::to_string(kRtspPort);
+        g_object_set(G_OBJECT(rtspServer_), "service", service.c_str(), nullptr);
+
+        GstRTSPMountPoints *mounts = gst_rtsp_server_get_mount_points(rtspServer_);
+        GstRTSPMediaFactory *factory = gst_rtsp_media_factory_new();
+        if (mounts == nullptr || factory == nullptr) {
+            g_printerr("Gagal membuat RTSP mount point atau media factory.\n");
+            if (mounts != nullptr) {
+                g_object_unref(mounts);
+            }
+            if (factory != nullptr) {
+                g_object_unref(factory);
+            }
+            return false;
+        }
+
+        gst_rtsp_media_factory_set_launch(
+            factory,
+            "( udpsrc name=pay0 port=5400 buffer-size=524288 "
+            "caps=\"application/x-rtp,media=video,clock-rate=90000,"
+            "encoding-name=H264,payload=96\" )");
+        gst_rtsp_media_factory_set_shared(factory, TRUE);
+        gst_rtsp_mount_points_add_factory(mounts, kRtspMountPoint, factory);
+        g_object_unref(mounts);
+
+        rtspServerSourceId_ = gst_rtsp_server_attach(rtspServer_, nullptr);
+        if (rtspServerSourceId_ == 0) {
+            g_printerr("Gagal memasang RTSP server pada GLib main context.\n");
+            return false;
+        }
+
+        g_print("*** RTSP Stream READY at rtsp://<Jetson-IP>:%u%s ***\n", kRtspPort,
+                kRtspMountPoint);
+        return true;
+    }
+
+    bool buildMonitorOutput(GstElement *outputConverter) {
+        GstElement *sink = createElement("nv3dsink", "monitor-sink");
+        if (sink == nullptr) {
+            return false;
+        }
+
+        g_object_set(G_OBJECT(sink), "sync", FALSE, nullptr);
+        if (!linkElements({outputConverter, sink})) {
+            return false;
+        }
+
+        g_print("*** Output akan ditampilkan di Monitor ***\n");
+        return true;
+    }
+
+    bool buildFileOutput(GstElement *outputConverter) {
+        GstElement *encoderCaps = nullptr;
+        GstElement *encoder = nullptr;
+        if (!createEncoder(encoderCaps, encoder, false)) {
+            return false;
+        }
+
+        GstElement *parser = createElement("h264parse", "h264-parser");
+        GstElement *muxer = createElement("qtmux", "mp4-muxer");
+        GstElement *sink = createElement("filesink", "file-sink");
+        if (parser == nullptr || muxer == nullptr || sink == nullptr) {
+            return false;
+        }
+
+        g_object_set(G_OBJECT(sink), "location", config_.outputFile.c_str(), nullptr);
+        if (!linkElements({outputConverter, encoderCaps, encoder, parser, muxer, sink})) {
+            return false;
+        }
+
+        g_print("*** Output akan disimpan ke: %s ***\n", config_.outputFile.c_str());
+        return true;
+    }
+
+    bool installOsdProbe(GstElement *osd) {
+        osdSinkPad_ = gst_element_get_static_pad(osd, "sink");
+        if (osdSinkPad_ == nullptr) {
+            g_printerr("Gagal mengambil sink pad nvdsosd.\n");
+            return false;
+        }
+
+        osdProbeId_ = gst_pad_add_probe(osdSinkPad_, GST_PAD_PROBE_TYPE_BUFFER,
+                                        &DeepStreamApplication::onOsdBuffer, this, nullptr);
+        if (osdProbeId_ == 0) {
+            g_printerr("Gagal memasang OSD buffer probe.\n");
+            return false;
+        }
+        return true;
+    }
+
+    bool installEventSources() {
+        sigintSourceId_ =
+            g_unix_signal_add(SIGINT, &DeepStreamApplication::onShutdownSignal, this);
+        sigtermSourceId_ =
+            g_unix_signal_add(SIGTERM, &DeepStreamApplication::onShutdownSignal, this);
+        if (sigintSourceId_ == 0 || sigtermSourceId_ == 0) {
+            g_printerr("Gagal memasang signal handler GLib.\n");
+            return false;
+        }
+        return true;
+    }
+
+    bool startBenchmarkLogger() {
+        if (!config_.benchmarkEnabled) {
+            return true;
+        }
+
+        loggerQueue_ = g_async_queue_new();
+        if (loggerQueue_ == nullptr) {
+            g_printerr("Gagal membuat queue benchmark.\n");
+            return false;
+        }
+
+        try {
+            loggerThread_ = std::thread(&DeepStreamApplication::benchmarkLoggerWorker, this);
+        } catch (const std::exception &error) {
+            g_printerr("Gagal memulai thread benchmark: %s\n", error.what());
+            g_async_queue_unref(loggerQueue_);
+            loggerQueue_ = nullptr;
+            return false;
+        }
+
+        g_print("\n=== BENCHMARK AKTIF ===\n");
+        g_print("Menyimpan log ke: %s\n\n", config_.benchmarkFile.c_str());
+        return true;
+    }
+
+    void benchmarkLoggerWorker() {
+        std::ifstream existingFile(config_.benchmarkFile, std::ios::binary);
+        const bool needsHeader =
+            !existingFile.is_open() || existingFile.peek() == std::ifstream::traits_type::eof();
+        existingFile.close();
+
+        std::ofstream logFile(config_.benchmarkFile, std::ios::app);
+        if (!logFile.is_open()) {
+            g_printerr("Gagal membuka file benchmark: %s\n", config_.benchmarkFile.c_str());
+        } else if (needsHeader) {
+            logFile << "Timestamp,FPS,Latency_ms\n";
+            logFile.flush();
+        }
+
+        bool writeErrorReported = false;
+        while (true) {
+            gpointer item = g_async_queue_pop(loggerQueue_);
+            if (item == &loggerStopToken_) {
+                break;
+            }
+
+            std::unique_ptr<BenchmarkData> data(static_cast<BenchmarkData *>(item));
+            if (!logFile.is_open()) {
+                continue;
+            }
+
+            logFile << data->timestamp << ',' << data->fps << ',' << data->latencyMs
+                    << std::endl;
+            if (!logFile && !writeErrorReported) {
+                g_printerr("Gagal menulis data benchmark ke: %s\n",
+                           config_.benchmarkFile.c_str());
+                writeErrorReported = true;
+            }
+        }
+    }
+
+    void stopBenchmarkLogger() {
+        if (loggerQueue_ == nullptr) {
+            return;
+        }
+
+        if (loggerThread_.joinable()) {
+            g_async_queue_push(loggerQueue_, &loggerStopToken_);
+            loggerThread_.join();
+        }
+        g_async_queue_unref(loggerQueue_);
+        loggerQueue_ = nullptr;
+    }
+
+    void resetMetrics() {
+        const auto now = SteadyClock::now();
+        metrics_.fpsWindowStart = now;
+        metrics_.lastBenchmarkLog = now;
+        metrics_.frameCount = 0;
+        metrics_.currentFps = 0.0;
+    }
+
+    static std::string currentTimestamp() {
+        const std::time_t currentTime = std::time(nullptr);
+        std::tm localTime{};
+        if (localtime_r(&currentTime, &localTime) == nullptr) {
+            return {};
+        }
+
+        std::array<char, 32> buffer{};
+        if (std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &localTime) ==
+            0) {
+            return {};
+        }
+        return buffer.data();
+    }
+
+    GstPadProbeReturn processOsdBuffer(GstPadProbeInfo *info) {
+        GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        if (buffer == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
+
+        NvDsBatchMeta *batchMeta = gst_buffer_get_nvds_batch_meta(buffer);
+        if (batchMeta == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
+
+        const auto now = SteadyClock::now();
+        metrics_.frameCount += batchMeta->num_frames_in_batch;
+        const auto fpsWindowMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - metrics_.fpsWindowStart)
+                .count();
+        if (fpsWindowMs >= 1000) {
+            metrics_.currentFps = (metrics_.frameCount * 1000.0) / fpsWindowMs;
+            metrics_.frameCount = 0;
+            metrics_.fpsWindowStart = now;
+        }
+
+        for (NvDsMetaList *frameNode = batchMeta->frame_meta_list; frameNode != nullptr;
+             frameNode = frameNode->next) {
+            auto *frameMeta = static_cast<NvDsFrameMeta *>(frameNode->data);
+            NvDsDisplayMeta *displayMeta = nvds_acquire_display_meta_from_pool(batchMeta);
+            if (frameMeta == nullptr || displayMeta == nullptr) {
+                continue;
+            }
+
+            displayMeta->num_labels = 1;
+            NvOSD_TextParams &text = displayMeta->text_params[0];
+            std::array<char, 64> fpsText{};
+            std::snprintf(fpsText.data(), fpsText.size(), "FPS: %.2f", metrics_.currentFps);
+            text.display_text = g_strdup(fpsText.data());
+            text.x_offset = 20;
+            text.y_offset = 20;
+            text.font_params.font_name = const_cast<char *>("Arial");
+            text.font_params.font_size = 14;
+            text.font_params.font_color = {1.0, 1.0, 1.0, 1.0};
+            text.set_bg_clr = 1;
+            text.text_bg_clr = {0.0, 0.0, 0.0, 0.5};
+            nvds_add_display_meta_to_frame(frameMeta, displayMeta);
+        }
+
+        if (config_.benchmarkEnabled &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - metrics_.lastBenchmarkLog)
+                    .count() >= 1) {
+            NvDsFrameLatencyInfo latencyInfo[kStreamMuxBatchSize]{};
+            const guint measuredFrames = nvds_measure_buffer_latency(buffer, latencyInfo);
+            const double latencyMs = measuredFrames > 0 ? latencyInfo[0].latency : 0.0;
+
+            auto *data = new (std::nothrow) BenchmarkData;
+            if (data != nullptr && loggerQueue_ != nullptr) {
+                data->fps = metrics_.currentFps;
+                data->latencyMs = latencyMs;
+                data->timestamp = currentTimestamp();
+                g_async_queue_push(loggerQueue_, data);
+            } else {
+                delete data;
+            }
+            metrics_.lastBenchmarkLog = now;
+        }
+
+        return GST_PAD_PROBE_OK;
+    }
+
+    void processDecodePad(GstPad *newPad) {
+        if (fileDecodeSinkPad_ == nullptr || gst_pad_is_linked(fileDecodeSinkPad_)) {
+            return;
+        }
+
+        GstCaps *caps = gst_pad_get_current_caps(newPad);
+        if (caps == nullptr) {
+            caps = gst_pad_query_caps(newPad, nullptr);
+        }
+        if (caps == nullptr || gst_caps_is_empty(caps) || gst_caps_is_any(caps)) {
+            if (caps != nullptr) {
+                gst_caps_unref(caps);
+            }
+            return;
+        }
+
+        const GstStructure *structure = gst_caps_get_structure(caps, 0);
+        const gchar *mediaType = structure != nullptr ? gst_structure_get_name(structure) : nullptr;
+        const bool isRawVideo = mediaType != nullptr && g_str_has_prefix(mediaType, "video/x-raw");
+        gst_caps_unref(caps);
+        if (!isRawVideo) {
+            return;
+        }
+
+        const GstPadLinkReturn linkResult = gst_pad_link(newPad, fileDecodeSinkPad_);
+        if (linkResult != GST_PAD_LINK_OK) {
+            g_printerr("Gagal menghubungkan decodebin ke konverter NVMM: %s.\n",
+                       gst_pad_link_get_name(linkResult));
+        }
+    }
+
+    gboolean processBusMessage(GstMessage *message) {
+        switch (GST_MESSAGE_TYPE(message)) {
+            case GST_MESSAGE_EOS:
+                removeSource(eosShutdownTimeoutId_);
+                g_print("End of stream (EOS) tercapai. Menutup pipeline dengan aman...\n");
+                g_main_loop_quit(mainLoop_);
+                break;
+            case GST_MESSAGE_ERROR: {
+                GError *error = nullptr;
+                gchar *debug = nullptr;
+                gst_message_parse_error(message, &error, &debug);
+                g_printerr("Error pada pipeline dari %s: %s\n",
+                           GST_OBJECT_NAME(message->src),
+                           error != nullptr ? error->message : "unknown error");
+                if (debug != nullptr) {
+                    g_printerr("Detail GStreamer: %s\n", debug);
+                }
+                g_clear_error(&error);
+                g_free(debug);
+                pipelineError_ = true;
+                g_main_loop_quit(mainLoop_);
+                break;
+            }
+            default:
+                break;
+        }
+        return G_SOURCE_CONTINUE;
+    }
+
+    gboolean processShutdownSignal() {
+        if (config_.outputMode == OutputMode::File && !eosRequested_) {
+            eosRequested_ = true;
+            g_print("\nSinyal shutdown diterima. Mengirim EOS agar MP4 disimpan dengan aman...\n");
+            if (gst_element_send_event(pipeline_, gst_event_new_eos())) {
+                eosShutdownTimeoutId_ =
+                    g_timeout_add_seconds(kEosShutdownTimeoutSeconds,
+                                          &DeepStreamApplication::onEosShutdownTimeout, this);
+                if (eosShutdownTimeoutId_ != 0) {
+                    return G_SOURCE_CONTINUE;
+                }
+                g_printerr("Gagal memasang timeout EOS; pipeline akan dihentikan langsung.\n");
+            } else {
+                g_printerr("Gagal mengirim EOS; pipeline akan dihentikan langsung.\n");
+            }
+        } else {
+            g_print("\nSinyal shutdown diterima. Menghentikan pipeline...\n");
+        }
+
+        removeSource(eosShutdownTimeoutId_);
+        g_main_loop_quit(mainLoop_);
+        return G_SOURCE_CONTINUE;
+    }
+
+    gboolean processEosShutdownTimeout() {
+        eosShutdownTimeoutId_ = 0;
+        g_printerr("EOS tidak selesai dalam %u detik; pipeline akan dihentikan langsung.\n",
+                   kEosShutdownTimeoutSeconds);
+        g_main_loop_quit(mainLoop_);
+        return G_SOURCE_REMOVE;
+    }
+
+    static gboolean onBusMessage(GstBus *, GstMessage *message, gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processBusMessage(message);
+    }
+
+    static gboolean onShutdownSignal(gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processShutdownSignal();
+    }
+
+    static gboolean onEosShutdownTimeout(gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processEosShutdownTimeout();
+    }
+
+    static void onDecodePadAdded(GstElement *, GstPad *newPad, gpointer userData) {
+        static_cast<DeepStreamApplication *>(userData)->processDecodePad(newPad);
+    }
+
+    static GstPadProbeReturn onOsdBuffer(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processOsdBuffer(info);
+    }
+
+    static void removeSource(guint &sourceId) {
+        if (sourceId != 0) {
+            g_source_remove(sourceId);
+            sourceId = 0;
+        }
+    }
+
+    void cleanup() {
+        if (osdSinkPad_ != nullptr && osdProbeId_ != 0) {
+            gst_pad_remove_probe(osdSinkPad_, osdProbeId_);
+            osdProbeId_ = 0;
+        }
+
+        if (pipeline_ != nullptr) {
+            gst_element_set_state(pipeline_, GST_STATE_NULL);
+            gst_element_get_state(pipeline_, nullptr, nullptr, 5 * GST_SECOND);
+        }
+
+        stopBenchmarkLogger();
+
+        if (streamMux_ != nullptr && streamMuxSinkPad_ != nullptr) {
+            gst_element_release_request_pad(streamMux_, streamMuxSinkPad_);
+        }
+        if (streamMuxSinkPad_ != nullptr) {
+            gst_object_unref(streamMuxSinkPad_);
+            streamMuxSinkPad_ = nullptr;
+        }
+        if (fileDecodeSinkPad_ != nullptr) {
+            gst_object_unref(fileDecodeSinkPad_);
+            fileDecodeSinkPad_ = nullptr;
+        }
+        if (osdSinkPad_ != nullptr) {
+            gst_object_unref(osdSinkPad_);
+            osdSinkPad_ = nullptr;
+        }
+
+        removeSource(rtspServerSourceId_);
+        removeSource(eosShutdownTimeoutId_);
+        removeSource(busWatchId_);
+        removeSource(sigintSourceId_);
+        removeSource(sigtermSourceId_);
+
+        if (rtspServer_ != nullptr) {
+            g_object_unref(rtspServer_);
+            rtspServer_ = nullptr;
+        }
+        if (pipeline_ != nullptr) {
+            g_print("Membersihkan resource...\n");
+            gst_object_unref(pipeline_);
+            pipeline_ = nullptr;
+            streamMux_ = nullptr;
+        }
+        if (mainLoop_ != nullptr) {
+            g_main_loop_unref(mainLoop_);
+            mainLoop_ = nullptr;
+        }
+    }
+
+    AppConfig config_;
+    GMainLoop *mainLoop_{nullptr};
+    GstElement *pipeline_{nullptr};
+    GstElement *streamMux_{nullptr};
+    GstPad *streamMuxSinkPad_{nullptr};
+    GstPad *fileDecodeSinkPad_{nullptr};
+    GstPad *osdSinkPad_{nullptr};
+    gulong osdProbeId_{0};
+    GstRTSPServer *rtspServer_{nullptr};
+    guint rtspServerSourceId_{0};
+    guint eosShutdownTimeoutId_{0};
+    guint busWatchId_{0};
+    guint sigintSourceId_{0};
+    guint sigtermSourceId_{0};
+    GAsyncQueue *loggerQueue_{nullptr};
+    std::thread loggerThread_;
+    char loggerStopToken_{0};
+    MetricsState metrics_;
+    bool eosRequested_{false};
+    bool pipelineError_{false};
+};
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
-
-    for (int i = 1; i < argc; i++) {
-        if (std::string(argv[i]) == "--benchmark") {
-            enable_benchmark = true;
-
-            // Cek apakah ada argumen SETELAH --benchmark dan argumen tersebut bukan flag (tidak diawali '-')
-            if (i + 1 < argc && argv[i + 1][0] != '-') {
-                benchmark_filename = argv[i + 1];
-                i++; // Lompati argumen nama file ini agar tidak dibaca lagi oleh argumen lain
-            }
-        }
+    AppConfig config;
+    const ParseResult parseResult = parseArguments(argc, argv, config);
+    if (parseResult == ParseResult::Help) {
+        return EXIT_SUCCESS;
     }
+    if (parseResult == ParseResult::Error) {
+        printUsage(argv[0]);
+        return EXIT_FAILURE;
+    }
+
     gst_init(&argc, &argv);
-
-    // 1. Konfigurasi Default
-    std::string config_path = "config/pgie_yolov8n.txt";
-    std::string input_type = "zed";     // Opsi: "zed", "file"
-    std::string input_file = "";        // Contoh: "file:///home/aimp/video.mp4"
-    std::string output_type = "rtsp";   // Opsi: "rtsp", "monitor", "file"
-    std::string output_file = "output.mp4";
-
-    // 2. Parsing Argumen Dinamis
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--config" && i + 1 < argc) config_path = argv[++i];
-        else if (arg == "--input" && i + 1 < argc) input_type = argv[++i];
-        else if (arg == "--input-file" && i + 1 < argc) input_file = argv[++i];
-        else if (arg == "--output" && i + 1 < argc) {
-		output_type = argv[++i];
-		if (output_type == "file") is_saving_file = true;
-	}
-        else if (arg == "--output-file" && i + 1 < argc) output_file = argv[++i];
-        else if (arg == "--help" || arg == "-h") {
-            g_print("\nPenggunaan:\n");
-            g_print("  --config <path>        : Path file config txt (Default: config/pgie_yolov8n.txt)\n");
-            g_print("  --input <zed|file>     : Sumber video (Default: zed)\n");
-            g_print("  --input-file <path>    : Path video jika input=file (Gunakan format URI: file:///path/ke/video.mp4)\n");
-            g_print("  --output <rtsp|monitor|file> : Jenis output (Default: rtsp)\n");
-            g_print("  --output-file <path>   : Nama file simpan jika output=file (Default: output.mp4)\n\n");
-            return 0;
-        }
-    }
-
-    g_print("=== KONFIGURASI PIPELINE ===\n");
-    g_print("Config   : %s\n", config_path.c_str());
-    g_print("Input    : %s %s\n", input_type.c_str(), (input_type == "file" ? input_file.c_str() : ""));
-    g_print("Output   : %s %s\n", output_type.c_str(), (output_type == "file" ? output_file.c_str() : ""));
-    g_print("============================\n");
-
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-    loop = g_main_loop_new(NULL, FALSE);
-
-    // 3. Buat Pipeline dan Elemen Utama (Core Inference)
-    pipeline = gst_pipeline_new("dynamic-yolo-pipeline");
-
-    // -- Tambahkan kode Bus Watcher ini --
-    GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
-    guint bus_watch_id = gst_bus_add_watch(bus, bus_call, loop);
-    gst_object_unref(bus);
-
-    GstElement *streammux = gst_element_factory_make("nvstreammux", "stream-muxer");
-    g_object_set(G_OBJECT(streammux), "batch-size", 1, "width", 1280, "height", 720, "batched-push-timeout", 40000, NULL);
-    
-    // Jika input file, bukan live source. Jika ZED, live source = TRUE.
-    g_object_set(G_OBJECT(streammux), "live-source", (input_type == "zed" ? TRUE : FALSE), NULL);
-
-    GstElement *pgie = gst_element_factory_make("nvinfer", "primary-inference");
-    g_object_set(G_OBJECT(pgie), "config-file-path", config_path.c_str(), NULL);
-
-    GstElement *nvvidconv2 = gst_element_factory_make("nvvideoconvert", "nvvidconv2");
-    GstElement *nvosd = gst_element_factory_make("nvdsosd", "nv-onscreendisplay");
-    GstElement *nvvidconv_out = gst_element_factory_make("nvvideoconvert", "nvvidconv_out");
-
-    gst_bin_add_many(GST_BIN(pipeline), streammux, pgie, nvvidconv2, nvosd, nvvidconv_out, NULL);
-    gst_element_link_many(streammux, pgie, nvvidconv2, nvosd, nvvidconv_out, NULL);
-
-    // 4. Konfigurasi Blok INPUT (Source)
-    if (input_type == "zed") {
-        GstElement *source = gst_element_factory_make("zedsrc", "zed-source");
-        g_object_set(G_OBJECT(source), "stream-type", 0, NULL);
-        GstElement *vidconv = gst_element_factory_make("videoconvert", "cpu-vidconv");
-        GstElement *caps_yuy2 = gst_element_factory_make("capsfilter", "caps-yuy2");
-        GstCaps *yuy2_caps = gst_caps_from_string("video/x-raw, format=(string)YUY2");
-        g_object_set(G_OBJECT(caps_yuy2), "caps", yuy2_caps, NULL);
-        gst_caps_unref(yuy2_caps);
-        
-        GstElement *nvvidconv1 = gst_element_factory_make("nvvideoconvert", "nvvidconv1");
-        GstElement *caps_nvmm = gst_element_factory_make("capsfilter", "caps-nvmm");
-        GstCaps *nvmm_caps = gst_caps_from_string("video/x-raw(memory:NVMM), format=(string)NV12, width=(int)1280, height=(int)720");
-        g_object_set(G_OBJECT(caps_nvmm), "caps", nvmm_caps, NULL);
-        gst_caps_unref(nvmm_caps);
-
-        gst_bin_add_many(GST_BIN(pipeline), source, vidconv, caps_yuy2, nvvidconv1, caps_nvmm, NULL);
-        gst_element_link_many(source, vidconv, caps_yuy2, nvvidconv1, caps_nvmm, NULL);
-
-        GstPad *sinkpad = gst_element_request_pad_simple(streammux, "sink_0");
-        GstPad *srcpad = gst_element_get_static_pad(caps_nvmm, "src");
-        gst_pad_link(srcpad, sinkpad);
-        gst_object_unref(sinkpad);
-        gst_object_unref(srcpad);
-    } 
-    else if (input_type == "file") {
-        if (input_file.empty()) {
-            g_printerr("Input file path harus diisi dengan --input-file\n");
-            return -1;
-        }
-
-	// Jika user tidak memasukkan "://" (misal lupa file://), ubah otomatis
-	if (input_file.find("://") == std::string::npos) {
-            char *abs_path = realpath(input_file.c_str(), NULL);
-            if (abs_path != NULL) {
-                input_file = "file://" + std::string(abs_path);
-                free(abs_path);
-            } else {
-                g_printerr("ERROR: File video tidak ditemukan di: %s\n", input_file.c_str());
-                return -1;
-            }
-            g_print("Auto-koreksi URI menjadi: %s\n", input_file.c_str());
-        }
-
-        GstElement *source = gst_element_factory_make("uridecodebin", "uri-decode-bin");
-        g_object_set(G_OBJECT(source), "uri", input_file.c_str(), NULL);
-        gst_bin_add(GST_BIN(pipeline), source);
-        // Hubungkan callback agar stream video otomatis masuk ke streammux
-        g_signal_connect(source, "pad-added", G_CALLBACK(cb_newpad), streammux);
-    }
-
-    // 5. Konfigurasi Blok OUTPUT (Sink)
-    if (output_type == "rtsp") {
-        GstElement *caps_cpu = gst_element_factory_make("capsfilter", "caps-cpu");
-        GstCaps *cpu_caps = gst_caps_from_string("video/x-raw, format=(string)I420");
-        g_object_set(G_OBJECT(caps_cpu), "caps", cpu_caps, NULL);
-        gst_caps_unref(cpu_caps);
-
-        GstElement *encoder = gst_element_factory_make("x264enc", "h264-encoder");
-        g_object_set(G_OBJECT(encoder), "bitrate", 4000, "speed-preset", 1, "tune", 4, NULL);
-        GstElement *rtppay = gst_element_factory_make("rtph264pay", "rtp-payer");
-        GstElement *sink = gst_element_factory_make("udpsink", "udp-sink");
-        g_object_set(G_OBJECT(sink), "host", "127.0.0.1", "port", 5400, "async", FALSE, "sync", FALSE, NULL);
-
-        gst_bin_add_many(GST_BIN(pipeline), caps_cpu, encoder, rtppay, sink, NULL);
-        gst_element_link_many(nvvidconv_out, caps_cpu, encoder, rtppay, sink, NULL);
-
-        GstRTSPServer *server = gst_rtsp_server_new();
-        g_object_set(server, "service", "8554", NULL);
-        GstRTSPMountPoints *mounts = gst_rtsp_server_get_mount_points(server);
-        GstRTSPMediaFactory *factory = gst_rtsp_media_factory_new();
-        gst_rtsp_media_factory_set_launch(factory, "( udpsrc name=pay0 port=5400 buffer-size=524288 caps=\"application/x-rtp, media=video, clock-rate=90000, encoding-name=(string)H264, payload=96 \" )");
-        gst_rtsp_media_factory_set_shared(factory, TRUE);
-        gst_rtsp_mount_points_add_factory(mounts, "/ds-test", factory);
-        g_object_unref(mounts);
-        gst_rtsp_server_attach(server, NULL);
-        g_print("*** RTSP Stream READY at rtsp://<Jetson-IP>:8554/ds-test ***\n");
-    } 
-    else if (output_type == "monitor") {
-        GstElement *sink = gst_element_factory_make("nv3dsink", "nv-3d-sink");
-        // Memastikan sync dimatikan agar tidak ada delay jika input dari kamera
-        g_object_set(G_OBJECT(sink), "sync", FALSE, NULL);
-        gst_bin_add(GST_BIN(pipeline), sink);
-        gst_element_link(nvvidconv_out, sink);
-        g_print("*** Output akan ditampilkan di Monitor ***\n");
-    } 
-    else if (output_type == "file") {
-        GstElement *caps_cpu = gst_element_factory_make("capsfilter", "caps-cpu");
-        GstCaps *cpu_caps = gst_caps_from_string("video/x-raw, format=(string)I420");
-        g_object_set(G_OBJECT(caps_cpu), "caps", cpu_caps, NULL);
-        gst_caps_unref(cpu_caps);
-
-        GstElement *encoder = gst_element_factory_make("x264enc", "h264-encoder");
-        g_object_set(G_OBJECT(encoder), "bitrate", 4000, "speed-preset", 1, NULL); // Tune dihilangkan untuk kualitas file
-        GstElement *parse = gst_element_factory_make("h264parse", "h264-parser");
-        GstElement *mux = gst_element_factory_make("qtmux", "mp4-muxer");
-        GstElement *sink = gst_element_factory_make("filesink", "file-sink");
-        g_object_set(G_OBJECT(sink), "location", output_file.c_str(), NULL);
-
-        gst_bin_add_many(GST_BIN(pipeline), caps_cpu, encoder, parse, mux, sink, NULL);
-        gst_element_link_many(nvvidconv_out, caps_cpu, encoder, parse, mux, sink, NULL);
-        g_print("*** Output akan disimpan ke: %s ***\n", output_file.c_str());
-    }
-
-    // OSD FPS
-    GstPad *osd_sink_pad = gst_element_get_static_pad(nvosd, "sink");
-    gst_pad_add_probe(osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER, osd_sink_pad_buffer_probe, NULL, NULL);
-    gst_object_unref(osd_sink_pad);
-
-    // 6. Jalankan Pipeline
-    gst_element_set_state(pipeline, GST_STATE_PLAYING);
-
-    std::thread log_thread;
-
-    // 2. NYALAKAN THREAD HANYA JIKA BENCHMARK AKTIF
-    if (enable_benchmark) {
-        g_print("\n=== BENCHMARK AKTIF ===\n");
-        g_print("Menyimpan log ke: %s\n\n", benchmark_filename.c_str());
-
-        logger_queue = g_async_queue_new();
-        log_thread = std::thread(async_logger_worker);
-    }
-
-    g_print("Menjalankan pipeline...\n");
-    g_main_loop_run(loop);
-
-    // Setelah loop berhenti (Ctrl+C ditekan), kirim 'Poison Pill'
-    if (enable_benchmark) {
-        BenchmarkData *stop_signal = g_new0(BenchmarkData, 1);
-        stop_signal->fps = -1.0;
-        g_async_queue_push(logger_queue, stop_signal);
-
-        if (log_thread.joinable()) log_thread.join();
-        g_async_queue_unref(logger_queue);
-    }
-
-    // 7. Bersihkan Resource saat program dimatikan
-    g_print("Membersihkan resource...\n");
-    gst_element_set_state(pipeline, GST_STATE_NULL);
-    gst_object_unref(pipeline);
-    g_main_loop_unref(loop);
-
-    return 0;
+    DeepStreamApplication application(std::move(config));
+    return application.run();
 }
