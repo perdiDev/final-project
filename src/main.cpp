@@ -30,6 +30,7 @@ constexpr guint kStreamWidth = 1280;
 constexpr guint kStreamHeight = 720;
 constexpr guint kStreamMuxBatchSize = 1;
 constexpr guint kStreamMuxTimeoutUs = 40000;
+constexpr guint kDefaultZedCameraFps = 30;
 constexpr guint kUdpPort = 5400;
 constexpr guint kRtspPort = 8554;
 constexpr guint kEncoderBitrateBps = 4'000'000;
@@ -65,6 +66,7 @@ struct AppConfig {
     std::string inferenceConfigPath{"config/pgie_yolov8n.txt"};
     std::string trackerConfigPath{kDefaultTrackerConfigPath};
     InputMode inputMode{InputMode::Zed};
+    guint zedCameraFps{kDefaultZedCameraFps};
     std::string inputFile;
     OutputMode outputMode{OutputMode::Rtsp};
     std::string outputFile{"output.mp4"};
@@ -99,6 +101,7 @@ void printUsage(const char *programName) {
     g_print("  --config <path>              : Config nvinfer/YOLO (default: config/pgie_yolov8n.txt)\n");
     g_print("  --tracker-config <path>      : Config NvMultiObjectTracker/NvDCF\n");
     g_print("  --input <zed|file>           : Sumber video (default: zed)\n");
+    g_print("  --camera-fps <fps>           : FPS kamera ZED: 15, 30, 60, 100, 120 (default: 30)\n");
     g_print("  --input-file <path|URI>      : Video jika input=file\n");
     g_print("  --output <rtsp|monitor|file> : Jenis output (default: rtsp)\n");
     g_print("  --output-file <path>         : File MP4 jika output=file (default: output.mp4)\n");
@@ -155,6 +158,25 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
                 config.inputMode = InputMode::File;
             } else {
                 g_printerr("Input tidak dikenal: %s (gunakan zed atau file).\n", value.c_str());
+                return ParseResult::Error;
+            }
+        } else if (argument == "--camera-fps") {
+            if (!readRequiredValue(argc, argv, i, argument, value)) {
+                return ParseResult::Error;
+            }
+            if (value == "15") {
+                config.zedCameraFps = 15;
+            } else if (value == "30") {
+                config.zedCameraFps = 30;
+            } else if (value == "60") {
+                config.zedCameraFps = 60;
+            } else if (value == "100") {
+                config.zedCameraFps = 100;
+            } else if (value == "120") {
+                config.zedCameraFps = 120;
+            } else {
+                g_printerr("FPS kamera ZED tidak didukung: %s (gunakan 15, 30, 60, 100, atau 120).\n",
+                           value.c_str());
                 return ParseResult::Error;
             }
         } else if (argument == "--input-file") {
@@ -241,6 +263,9 @@ private:
         g_print("Config   : %s\n", config_.inferenceConfigPath.c_str());
         g_print("Input    : %s %s\n", toString(config_.inputMode),
                 config_.inputMode == InputMode::File ? config_.inputFile.c_str() : "");
+        if (config_.inputMode == InputMode::Zed) {
+            g_print("Camera FPS: %u\n", config_.zedCameraFps);
+        }
         g_print("Output   : %s %s\n", toString(config_.outputMode),
                 config_.outputMode == OutputMode::File ? config_.outputFile.c_str() : "");
         g_print("Tracker  : NvDCF (%s)\n", config_.trackerConfigPath.c_str());
@@ -397,7 +422,8 @@ private:
             return false;
         }
 
-        g_object_set(G_OBJECT(source), "stream-type", 0, nullptr);
+        g_object_set(G_OBJECT(source), "stream-type", 0, "camera-fps",
+                     static_cast<gint>(config_.zedCameraFps), nullptr);
         if (!setCaps(yuy2Caps, "video/x-raw, format=(string)YUY2") ||
             !setCaps(nvmmCaps,
                      "video/x-raw(memory:NVMM), format=(string)NV12, width=(int)1280, "

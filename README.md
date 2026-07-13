@@ -145,6 +145,7 @@ Aplikasi mendukung berbagai parameter dinamis yang dapat disesuaikan saat dijala
 | `--config <path>` | Lokasi file konfigurasi model YOLO | `config/pgie_yolov8n.txt` |
 | `--tracker-config <path>` | Lokasi konfigurasi low-level NvMultiObjectTracker | Profil `config_tracker_NvDCF_perf.yml` dari DeepStream |
 | `--input <zed\|file>` | Mode sumber input video | `zed` |
+| `--camera-fps <fps>` | Frame rate kamera ZED (`15`, `30`, `60`, `100`, atau `120`) | `30` |
 | `--input-file <path>` | Lokasi file video (jika input adalah `file`) | *(Wajib diisi jika input=file)* |
 | `--output <rtsp\|monitor\|file>` | Mode output stream hasil deteksi | `rtsp` |
 | `--output-file <path>` | Nama file penyimpanan output (jika output adalah `file`) | `output.mp4` |
@@ -158,6 +159,12 @@ Aplikasi mendukung berbagai parameter dinamis yang dapat disesuaikan saat dijala
 #### 1. Input ZED Kamera ➜ Output Streaming RTSP (Default)
 ```bash
 ./DeepStreamZedyoloRTSP --input zed --output rtsp
+```
+
+Kamera ZED dibuka pada 30 FPS secara default. Frame rate lain dapat dipilih sesuai kemampuan resolusi dan model kamera:
+
+```bash
+./DeepStreamZedyoloRTSP --input zed --camera-fps 60 --output rtsp
 ```
 
 Secara default pipeline memakai profil NvDCF performa dari instalasi DeepStream. Untuk memilih profil lain:
