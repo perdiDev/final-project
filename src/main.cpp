@@ -34,8 +34,15 @@ constexpr guint kUdpPort = 5400;
 constexpr guint kRtspPort = 8554;
 constexpr guint kEncoderBitrateBps = 4'000'000;
 constexpr guint kSoftwareEncoderBitrateKbps = 4000;
+constexpr guint kTrackerWidth = 640;
+constexpr guint kTrackerHeight = 384;
 constexpr guint kEosShutdownTimeoutSeconds = 10;
 constexpr char kRtspMountPoint[] = "/ds-test";
+constexpr char kTrackerLibraryPath[] =
+    "/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so";
+constexpr char kDefaultTrackerConfigPath[] =
+    "/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/"
+    "config_tracker_NvDCF_perf.yml";
 
 struct BenchmarkData {
     double fps{0.0};
@@ -56,6 +63,7 @@ enum class OutputMode {
 
 struct AppConfig {
     std::string inferenceConfigPath{"config/pgie_yolov8n.txt"};
+    std::string trackerConfigPath{kDefaultTrackerConfigPath};
     InputMode inputMode{InputMode::Zed};
     std::string inputFile;
     OutputMode outputMode{OutputMode::Rtsp};
@@ -89,6 +97,7 @@ const char *toString(OutputMode mode) {
 void printUsage(const char *programName) {
     g_print("\nPenggunaan: %s [opsi]\n", programName);
     g_print("  --config <path>              : Config nvinfer/YOLO (default: config/pgie_yolov8n.txt)\n");
+    g_print("  --tracker-config <path>      : Config NvMultiObjectTracker/NvDCF\n");
     g_print("  --input <zed|file>           : Sumber video (default: zed)\n");
     g_print("  --input-file <path|URI>      : Video jika input=file\n");
     g_print("  --output <rtsp|monitor|file> : Jenis output (default: rtsp)\n");
@@ -131,6 +140,11 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
                 return ParseResult::Error;
             }
             config.inferenceConfigPath = std::move(value);
+        } else if (argument == "--tracker-config") {
+            if (!readRequiredValue(argc, argv, i, argument, value)) {
+                return ParseResult::Error;
+            }
+            config.trackerConfigPath = std::move(value);
         } else if (argument == "--input") {
             if (!readRequiredValue(argc, argv, i, argument, value)) {
                 return ParseResult::Error;
@@ -229,6 +243,7 @@ private:
                 config_.inputMode == InputMode::File ? config_.inputFile.c_str() : "");
         g_print("Output   : %s %s\n", toString(config_.outputMode),
                 config_.outputMode == OutputMode::File ? config_.outputFile.c_str() : "");
+        g_print("Tracker  : NvDCF (%s)\n", config_.trackerConfigPath.c_str());
         g_print("============================\n");
     }
 
@@ -311,13 +326,14 @@ private:
 
         GstElement *streamMux = createElement("nvstreammux", "stream-muxer");
         GstElement *primaryInference = createElement("nvinfer", "primary-inference");
+        GstElement *tracker = createElement("nvtracker", "object-tracker");
         GstElement *preOsdConverter =
             createElement("nvvideoconvert", "pre-osd-converter");
         GstElement *osd = createElement("nvdsosd", "nv-onscreendisplay");
         GstElement *outputConverter =
             createElement("nvvideoconvert", "output-converter");
-        if (streamMux == nullptr || primaryInference == nullptr || preOsdConverter == nullptr ||
-            osd == nullptr || outputConverter == nullptr) {
+        if (streamMux == nullptr || primaryInference == nullptr || tracker == nullptr ||
+            preOsdConverter == nullptr || osd == nullptr || outputConverter == nullptr) {
             return false;
         }
 
@@ -331,9 +347,13 @@ private:
         // model, labels, and TensorRT engine settings.
         g_object_set(G_OBJECT(primaryInference), "config-file-path",
                      config_.inferenceConfigPath.c_str(), nullptr);
+        g_object_set(G_OBJECT(tracker), "tracker-width", kTrackerWidth, "tracker-height",
+                     kTrackerHeight, "gpu-id", 0U, "ll-lib-file", kTrackerLibraryPath,
+                     "ll-config-file", config_.trackerConfigPath.c_str(),
+                     "display-tracking-id", TRUE, nullptr);
 
         if (!linkElements(
-                {streamMux_, primaryInference, preOsdConverter, osd, outputConverter})) {
+                {streamMux_, primaryInference, tracker, preOsdConverter, osd, outputConverter})) {
             return false;
         }
         if (!buildInput()) {

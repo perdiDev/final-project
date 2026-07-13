@@ -14,6 +14,7 @@ Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk perfor
   - **Input**: Mendukung kamera live **ZED** (`zedsrc`) atau file video lokal (menggunakan `uridecodebin`).
   - **Output**: Mendukung pancaran jaringan **RTSP**, display monitor lokal **NV3D** (`nv3dsink`), atau penyimpanan aman file video lokal **MP4**.
 - **Normalisasi Format Video Otomatis**: Semua input (termasuk file video non-NV12 atau software decoded) secara otomatis dikonversi ke format `NV12` di dalam memori NVMM sebelum dikirim ke `nvstreammux` untuk mencegah ketidakcocokan format.
+- **Pelacakan Objek NvDCF**: `nvtracker` berjalan setelah primary inference menggunakan NvMultiObjectTracker dan menampilkan ID pelacakan pada hasil OSD. Profil tracker dapat diganti melalui `--tracker-config`.
 - **Graceful Shutdown Tanpa Data Korup**: Penanganan sinyal `Ctrl+C` (`SIGINT`/`SIGTERM`) terintegrasi langsung dengan GMainLoop bawaan GLib (`g_unix_signal_add`). Jika Anda menyimpan output ke file MP4, sistem akan mengirimkan sinyal EOS (*End of Stream*) dan menunggu hingga 10 detik agar file tertutup dengan aman sebelum program mati.
 - **Asynchronous Benchmark Logging**: Logger untuk FPS dan latensi berjalan pada thread terpisah berbasis queue thread-safe non-blocking GLib (`GAsyncQueue`), memastikan operasi I/O file tidak mengganggu frame rate utama.
 
@@ -142,6 +143,7 @@ Aplikasi mendukung berbagai parameter dinamis yang dapat disesuaikan saat dijala
 | Parameter | Deskripsi | Nilai Default |
 | :--- | :--- | :--- |
 | `--config <path>` | Lokasi file konfigurasi model YOLO | `config/pgie_yolov8n.txt` |
+| `--tracker-config <path>` | Lokasi konfigurasi low-level NvMultiObjectTracker | Profil `config_tracker_NvDCF_perf.yml` dari DeepStream |
 | `--input <zed\|file>` | Mode sumber input video | `zed` |
 | `--input-file <path>` | Lokasi file video (jika input adalah `file`) | *(Wajib diisi jika input=file)* |
 | `--output <rtsp\|monitor\|file>` | Mode output stream hasil deteksi | `rtsp` |
@@ -156,6 +158,13 @@ Aplikasi mendukung berbagai parameter dinamis yang dapat disesuaikan saat dijala
 #### 1. Input ZED Kamera ➜ Output Streaming RTSP (Default)
 ```bash
 ./DeepStreamZedyoloRTSP --input zed --output rtsp
+```
+
+Secara default pipeline memakai profil NvDCF performa dari instalasi DeepStream. Untuk memilih profil lain:
+
+```bash
+./DeepStreamZedyoloRTSP --input zed --output rtsp \
+  --tracker-config /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_accuracy.yml
 ```
 
 #### 2. Input File Video ➜ Output Simpan MP4 Lokal (Aman & Rapih)
