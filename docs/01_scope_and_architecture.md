@@ -39,7 +39,7 @@ flowchart TD
     G --> J[File MP4]
 
     F -. pad probe .-> K[Benchmark Logger Thread - GAsyncQueue]
-    K --> L[fps.csv: timestamp, FPS, latency_ms]
+    K --> L[fps.csv per frame: frame, PTS, elapsed, FPS, latency]
 
     M[tegrastats] --> N[LogParser - C++]
     N --> O[hardware_analysis.csv: RAM, GPU%, CPU/core, power rails]

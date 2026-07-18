@@ -59,7 +59,7 @@ seperti perilaku aplikasi utama, shutdown akan tetap mulus tanpa merusak file ou
 data/benchmark/
 └── <model>/
     └── <YYYYMMDD_HHMMSS>/
-        ├── fps.csv                 # Timestamp, FPS, Latency_ms (dari aplikasi)
+        ├── fps.csv                 # Satu baris per frame: PTS, elapsed, FPS, latency
         ├── hardware_analysis.csv   # RAM, GPU%, CPU/core, power rails (dari tegrastats)
         ├── run_info.txt            # metadata run: config, input/output, durasi, git commit, dst.
         └── pipeline_output.mp4     # hanya ada jika --output file (default)
@@ -67,6 +67,26 @@ data/benchmark/
 
 Karena setiap run dibuatkan folder baru bertimestamp, **hasil run sebelumnya tidak akan
 pernah tertimpa** — aman untuk mengulang beberapa kali per model (lihat §4.3).
+
+### Format `fps.csv` per frame
+
+Logger menghasilkan satu record untuk setiap frame dengan kolom:
+
+```text
+Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms
+```
+
+- `Frame_Number`: nomor urut frame dari DeepStream.
+- `Media_PTS_ms`: posisi frame pada timeline media; bernilai `-1` jika PTS tidak tersedia.
+- `Elapsed_ms`: waktu wall-clock sejak pipeline mulai, untuk menghitung processing throughput.
+- `FPS`: throughput pada window wall-clock sekitar satu detik; nilainya dapat berulang pada
+  beberapa frame dan bernilai `0` selama window pertama belum lengkap.
+- `Latency_ms`: latency frame yang dilaporkan DeepStream.
+
+Input file dapat diproses lebih cepat daripada durasi pemutarannya. Karena itu, jumlah baris
+mengikuti **jumlah frame**, bukan jumlah detik wall-clock maupun durasi media. Penulisan CSV
+tetap dilakukan oleh thread terpisah dan di-flush secara berkala agar I/O tidak dilakukan di
+jalur kritis pipeline.
 
 ### Kenapa `NVDS_ENABLE_LATENCY_MEASUREMENT=1` penting
 

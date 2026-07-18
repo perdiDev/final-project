@@ -8,10 +8,10 @@
 
 1. Pastikan sudah menjalankan **minimal 3–5 repetisi** per model dengan durasi klip yang
    sama (`--duration`), sesuai §4.3.
-2. Untuk setiap run, buang baris-baris di awal (**warm-up window**, misal 10–15 detik
-   pertama) sebelum menghitung statistik — lihat §6.3 untuk contoh kode.
-3. Hitung statistik ringkas (mean, median, std, p95) dari `FPS` dan `Latency_ms` di setiap
-   `fps.csv`, gabungkan ke satu baris per model (rata-ratakan lintas repetisi).
+2. Untuk setiap run, buang frame pada **warm-up window** (misal 10–15 detik pertama)
+   berdasarkan `Elapsed_ms`, bukan berdasarkan jumlah baris — lihat §6.3 untuk contoh kode.
+3. Hitung throughput FPS setiap run dari jumlah frame dibagi elapsed wall-clock. Gunakan
+   seluruh nilai `Latency_ms` per-frame untuk mean, median, std, dan percentile.
 4. Lakukan hal serupa untuk `hardware_analysis.csv` (`GPU_Persen`, `RAM_MB`, kolom power `*_mW`).
 5. Isi tabel §6.2 dengan hasil agregat tersebut.
 
@@ -37,7 +37,7 @@ Anda memiliki beberapa folder run per model:
 import glob
 import pandas as pd
 
-WARMUP_SECONDS = 15  # buang N baris pertama tiap run (lihat §4.3)
+WARMUP_SECONDS = 2  # gunakan 10–15 untuk run panjang; jangan melebihi durasi proses aktual
 
 def load_runs(model_name: str) -> pd.DataFrame:
     frames = []
@@ -47,22 +47,41 @@ def load_runs(model_name: str) -> pd.DataFrame:
             df = pd.read_csv(fps_path)
         except FileNotFoundError:
             continue
-        df = df.iloc[WARMUP_SECONDS:]  # buang warm-up window
+        df = df[df["Elapsed_ms"] >= WARMUP_SECONDS * 1000].copy()
+        if df.empty:
+            continue
         df["run_dir"] = run_dir
         frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+def throughput_per_run(df: pd.DataFrame) -> pd.Series:
+    results = {}
+    for run_dir, run in df.groupby("run_dir"):
+        elapsed_s = (run["Elapsed_ms"].max() - run["Elapsed_ms"].min()) / 1000
+        results[run_dir] = (
+            (len(run) - 1) / elapsed_s
+            if elapsed_s > 0 and len(run) > 1
+            else float("nan")
+        )
+    return pd.Series(results, name="FPS")
 
 for model in ["yolov8n_kitti", "yolov9t_kitti", "yolov10n_kitti", "yolov26n_kitti"]:
     df = load_runs(model)
     if df.empty:
         print(f"{model}: belum ada data run")
         continue
+    run_fps = throughput_per_run(df)
     print(f"--- {model} ---")
-    print(f"Avg FPS   : {df['FPS'].mean():.2f}")
-    print(f"Median FPS: {df['FPS'].median():.2f}")
-    print(f"Std FPS   : {df['FPS'].std():.2f}")
-    print(f"p95 Latency (ms): {df['Latency_ms'].quantile(0.95):.2f}")
+    print(f"Avg FPS antar-run   : {run_fps.mean():.2f}")
+    print(f"Median FPS antar-run: {run_fps.median():.2f}")
+    print(f"Std FPS antar-run   : {run_fps.std():.2f}")
+    print(f"p95 Latency (ms)    : {df['Latency_ms'].quantile(0.95):.2f}")
 ```
+
+Kolom `FPS` pada CSV adalah nilai window satu detik yang diulang pada setiap frame. Jangan
+langsung merata-ratakan kolom tersebut karena window ber-FPS tinggi akan memiliki lebih banyak
+baris dan mendapat bobot lebih besar. Rumus di atas menghitung throughput setiap run langsung
+dari jumlah frame dan `Elapsed_ms`.
 
 Lakukan hal yang sama untuk `hardware_analysis.csv` (gabungkan dengan `pd.merge_asof` pada
 kolom `Timestamp` jika ingin mengaitkan FPS dengan GPU%/power pada waktu yang sama).

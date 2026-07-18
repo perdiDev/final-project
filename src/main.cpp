@@ -15,6 +15,7 @@
 #include <ctime>
 #include <exception>
 #include <fstream>
+#include <iomanip>
 #include <initializer_list>
 #include <memory>
 #include <new>
@@ -38,6 +39,7 @@ constexpr guint kSoftwareEncoderBitrateKbps = 4000;
 constexpr guint kTrackerWidth = 640;
 constexpr guint kTrackerHeight = 384;
 constexpr guint kEosShutdownTimeoutSeconds = 10;
+constexpr guint kBenchmarkFlushIntervalRecords = 256;
 constexpr char kRtspMountPoint[] = "/ds-test";
 constexpr char kTrackerLibraryPath[] =
     "/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so";
@@ -46,9 +48,12 @@ constexpr char kDefaultTrackerConfigPath[] =
     "config_tracker_NvDCF_perf.yml";
 
 struct BenchmarkData {
+    guint64 frameNumber{0};
+    double mediaPtsMs{-1.0};
+    double elapsedMs{0.0};
     double fps{0.0};
     double latencyMs{0.0};
-    std::string timestamp;
+    gint64 wallClockUs{0};
 };
 
 enum class InputMode {
@@ -253,7 +258,7 @@ public:
 private:
     struct MetricsState {
         SteadyClock::time_point fpsWindowStart{SteadyClock::now()};
-        SteadyClock::time_point lastBenchmarkLog{SteadyClock::now()};
+        SteadyClock::time_point benchmarkStart{SteadyClock::now()};
         guint frameCount{0};
         double currentFps{0.0};
     };
@@ -739,15 +744,21 @@ private:
         std::ofstream logFile(config_.benchmarkFile, std::ios::app);
         if (!logFile.is_open()) {
             g_printerr("Gagal membuka file benchmark: %s\n", config_.benchmarkFile.c_str());
-        } else if (needsHeader) {
-            logFile << "Timestamp,FPS,Latency_ms\n";
-            logFile.flush();
+        } else {
+            if (needsHeader) {
+                logFile << "Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms\n";
+            }
+            logFile << std::fixed << std::setprecision(3);
         }
 
         bool writeErrorReported = false;
+        guint recordsSinceFlush = 0;
         while (true) {
             gpointer item = g_async_queue_pop(loggerQueue_);
             if (item == &loggerStopToken_) {
+                if (logFile.is_open()) {
+                    logFile.flush();
+                }
                 break;
             }
 
@@ -756,8 +767,14 @@ private:
                 continue;
             }
 
-            logFile << data->timestamp << ',' << data->fps << ',' << data->latencyMs
-                    << std::endl;
+            logFile << formatTimestamp(data->wallClockUs) << ',' << data->frameNumber << ','
+                    << data->mediaPtsMs << ',' << data->elapsedMs << ',' << data->fps << ','
+                    << data->latencyMs << '\n';
+            ++recordsSinceFlush;
+            if (recordsSinceFlush >= kBenchmarkFlushIntervalRecords) {
+                logFile.flush();
+                recordsSinceFlush = 0;
+            }
             if (!logFile && !writeErrorReported) {
                 g_printerr("Gagal menulis data benchmark ke: %s\n",
                            config_.benchmarkFile.c_str());
@@ -782,24 +799,30 @@ private:
     void resetMetrics() {
         const auto now = SteadyClock::now();
         metrics_.fpsWindowStart = now;
-        metrics_.lastBenchmarkLog = now;
+        metrics_.benchmarkStart = now;
         metrics_.frameCount = 0;
         metrics_.currentFps = 0.0;
     }
 
-    static std::string currentTimestamp() {
-        const std::time_t currentTime = std::time(nullptr);
+    static std::string formatTimestamp(gint64 wallClockUs) {
+        const std::time_t seconds =
+            static_cast<std::time_t>(wallClockUs / G_USEC_PER_SEC);
         std::tm localTime{};
-        if (localtime_r(&currentTime, &localTime) == nullptr) {
+        if (localtime_r(&seconds, &localTime) == nullptr) {
             return {};
         }
 
-        std::array<char, 32> buffer{};
-        if (std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &localTime) ==
+        std::array<char, 32> dateTime{};
+        if (std::strftime(dateTime.data(), dateTime.size(), "%Y-%m-%d %H:%M:%S", &localTime) ==
             0) {
             return {};
         }
-        return buffer.data();
+
+        const gint64 milliseconds = (wallClockUs % G_USEC_PER_SEC) / 1000;
+        std::array<char, 40> timestamp{};
+        std::snprintf(timestamp.data(), timestamp.size(), "%s.%03lld", dateTime.data(),
+                      static_cast<long long>(milliseconds));
+        return timestamp.data();
     }
 
     GstPadProbeReturn processOsdBuffer(GstPadProbeInfo *info) {
@@ -847,23 +870,40 @@ private:
             nvds_add_display_meta_to_frame(frameMeta, displayMeta);
         }
 
-        if (config_.benchmarkEnabled &&
-            std::chrono::duration_cast<std::chrono::seconds>(now - metrics_.lastBenchmarkLog)
-                    .count() >= 1) {
+        if (config_.benchmarkEnabled) {
             NvDsFrameLatencyInfo latencyInfo[kStreamMuxBatchSize]{};
             const guint measuredFrames = nvds_measure_buffer_latency(buffer, latencyInfo);
-            const double latencyMs = measuredFrames > 0 ? latencyInfo[0].latency : 0.0;
+            const double elapsedMs =
+                std::chrono::duration<double, std::milli>(now - metrics_.benchmarkStart).count();
+            const gint64 wallClockUs = g_get_real_time();
 
-            auto *data = new (std::nothrow) BenchmarkData;
-            if (data != nullptr && loggerQueue_ != nullptr) {
+            guint latencyIndex = 0;
+            for (NvDsMetaList *frameNode = batchMeta->frame_meta_list; frameNode != nullptr;
+                 frameNode = frameNode->next) {
+                auto *frameMeta = static_cast<NvDsFrameMeta *>(frameNode->data);
+                if (frameMeta == nullptr) {
+                    continue;
+                }
+
+                const guint currentLatencyIndex = latencyIndex++;
+                auto *data = new (std::nothrow) BenchmarkData;
+                if (data == nullptr || loggerQueue_ == nullptr) {
+                    delete data;
+                    continue;
+                }
+
+                data->frameNumber = frameMeta->frame_num;
+                data->mediaPtsMs = GST_CLOCK_TIME_IS_VALID(frameMeta->buf_pts)
+                                       ? static_cast<double>(frameMeta->buf_pts) / GST_MSECOND
+                                       : -1.0;
+                data->elapsedMs = elapsedMs;
                 data->fps = metrics_.currentFps;
-                data->latencyMs = latencyMs;
-                data->timestamp = currentTimestamp();
+                data->latencyMs = currentLatencyIndex < measuredFrames
+                                      ? latencyInfo[currentLatencyIndex].latency
+                                      : 0.0;
+                data->wallClockUs = wallClockUs;
                 g_async_queue_push(loggerQueue_, data);
-            } else {
-                delete data;
             }
-            metrics_.lastBenchmarkLog = now;
         }
 
         return GST_PAD_PROBE_OK;
