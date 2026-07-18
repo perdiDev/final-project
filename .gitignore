@@ -1,4 +1,4 @@
 build/
-data/output/
+data/output/*
 DeepStreamZedyoloRTSP
-data/benchmark/
+data/benchmark/*
