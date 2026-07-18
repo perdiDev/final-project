@@ -4,6 +4,8 @@ Proyek ini mengintegrasikan kamera **Stereolabs ZED** dengan **NVIDIA DeepStream
 
 Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk performa optimal, manajemen memori berbasis RAII, keamanan multithreading, dan penghentian program secara mulus tanpa mengorbankan performa *real-time* perangkat Jetson.
 
+> 📚 **Dokumentasi skripsi/Tugas Akhir** (scope, arsitektur, metodologi benchmark, hasil akurasi, dan analisis trade-off) ada di [`docs/`](docs/README.md).
+
 ---
 
 ## ✨ Fitur & Keunggulan Baru
@@ -188,6 +190,15 @@ Secara default pipeline memakai profil NvDCF performa dari instalasi DeepStream.
 ```bash
 ./DeepStreamZedyoloRTSP --input zed --output rtsp --benchmark data/benchmark/log_performa.csv
 ```
+
+Untuk benchmark yang terkontrol dan bisa direproduksi (memilih model, mencatat metadata run,
+hardware/power via `tegrastats`, dan hasil per model tidak saling menimpa), gunakan runner
+yang sudah disiapkan di `scripts/run_benchmark.sh`:
+```bash
+./scripts/run_benchmark.sh --list                                   # lihat model yang tersedia
+./scripts/run_benchmark.sh --model yolov8n_kitti --duration 180      # jalankan satu model
+```
+Detail metodologi benchmark & analisis datanya ada di [`docs/`](docs/README.md).
 
 ---
 
