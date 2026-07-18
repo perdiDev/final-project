@@ -97,6 +97,33 @@ di `src/main.cpp` hanya mengembalikan nilai valid jika environment variable
 mengaktifkan ini (`export NVDS_ENABLE_LATENCY_MEASUREMENT=1`) — jika Anda menjalankan
 executable secara manual tanpa script ini, jangan lupa set variabel ini sendiri.
 
+### Jika `hardware_analysis.csv` tidak muncul
+
+Runner memerlukan executable `tegrastats` dan `LogParser`. Verifikasi langsung di Jetson:
+
+```bash
+command -v tegrastats
+tegrastats --interval 1000
+ls -l ./LogParser ./build/LogParser
+```
+
+Tekan `Ctrl+C` setelah beberapa sampel `tegrastats` terlihat. Runner sekarang mencatat
+`tegrastats_path` dan `hardware_log_status` di `run_info.txt`. Jika perekaman gagal,
+`raw_hw.log` tidak dihapus dan stderr disimpan sebagai `hardware_recorder_error.log`, sehingga
+penyebab seperti executable tidak ditemukan, izin ditolak, atau output kosong dapat diperiksa.
+
+`tegrastats` tidak menyediakan timestamp sampel. Selain itu, outputnya dapat ter-buffer ketika
+diarahkan ke pipe. Runner karena itu merekonstruksi waktu nominal dari waktu mulai recorder,
+nomor sampel, dan `tegrastats_interval_ms`. Kolom hardware yang dihasilkan diawali dengan:
+
+```text
+Timestamp,Sample_Number,Hardware_Elapsed_ms,...
+```
+
+Cara ini membuat timestamp tetap maju sesuai interval meskipun beberapa baris baru diterima
+bersamaan saat proses dihentikan. Timestamp tersebut adalah waktu sampling nominal; jitter
+scheduler yang lebih kecil daripada interval tidak diukur.
+
 ## 4.3 Rekomendasi Jumlah Pengulangan (Repetisi)
 
 Satu kali run per model **tidak cukup** untuk klaim ilmiah yang kuat — variasi kecil (thermal

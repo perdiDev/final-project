@@ -176,6 +176,8 @@ mkdir -p "$RUN_DIR"
 FPS_CSV="$RUN_DIR/fps.csv"
 RAW_LOG="$RUN_DIR/raw_hw.log"
 HW_CSV="$RUN_DIR/hardware_analysis.csv"
+HW_ERROR_LOG="$RUN_DIR/hardware_recorder_error.log"
+HW_FIFO="$RUN_DIR/.tegrastats.fifo"
 RUN_INFO="$RUN_DIR/run_info.txt"
 OUTPUT_VIDEO_FILE="$RUN_DIR/pipeline_output.mp4"
 
@@ -193,6 +195,12 @@ PARSER_EXEC="$(find_executable LogParser)"
 if [ -z "$PARSER_EXEC" ]; then
     echo "[WARN] LogParser tidak ditemukan (./ atau ./build/). Log hardware mentah tidak akan"
     echo "       diproses otomatis jadi CSV, tapi benchmark tetap berjalan."
+fi
+
+TEGRASTATS_EXEC="$(command -v tegrastats 2>/dev/null || true)"
+if [ -z "$TEGRASTATS_EXEC" ]; then
+    echo "[WARN] tegrastats tidak ditemukan di PATH. Hardware benchmark tidak dapat direkam."
+    echo "       Jalankan benchmark pada Jetson dan pastikan tegrastats dapat dipanggil."
 fi
 
 # ==============================================================================
@@ -231,6 +239,7 @@ fi
     echo "git_commit             : $(git rev-parse --short HEAD 2>/dev/null || echo 'n/a')"
     echo "nvpmodel_mode          : $(nvpmodel -q 2>/dev/null | tr '\n' ' ' || echo 'n/a')"
     echo "jetson_clocks_status   : $(jetson_clocks --show 2>/dev/null | tr '\n' ' ' || echo 'n/a')"
+    echo "tegrastats_path        : ${TEGRASTATS_EXEC:-not found}"
     echo "tegrastats_interval_ms : $TEGRA_INTERVAL_MS"
     echo "latency_measurement    : NVDS_ENABLE_LATENCY_MEASUREMENT=1 (diaktifkan otomatis)"
 } > "$RUN_INFO"
@@ -250,8 +259,16 @@ cleanup() {
         kill "$TEGRA_PID" 2>/dev/null
         wait "$TEGRA_PID" 2>/dev/null
     fi
+    if [ -n "${HW_FORMATTER_PID:-}" ]; then
+        wait "$HW_FORMATTER_PID" 2>/dev/null
+    fi
+    rm -f "$HW_FIFO"
 
-    parse_hardware_data
+    if parse_hardware_data; then
+        echo "hardware_log_status     : success" >> "$RUN_INFO"
+    else
+        echo "hardware_log_status     : failed (lihat output terminal/hardware_recorder_error.log)" >> "$RUN_INFO"
+    fi
 
     echo "finished_at            : $(date '+%Y-%m-%d %H:%M:%S')" >> "$RUN_INFO"
 
@@ -259,21 +276,46 @@ cleanup() {
     echo "=== BENCHMARK SELESAI: $MODEL_NAME ($RUN_ID) ==="
     echo "- Folder hasil     : $RUN_DIR"
     echo "- Log FPS+Latency  : $FPS_CSV"
-    echo "- Log Hardware     : $HW_CSV"
+    if [ -s "$HW_CSV" ]; then
+        echo "- Log Hardware     : $HW_CSV"
+    else
+        echo "- Log Hardware     : TIDAK TERSEDIA (lihat $RUN_INFO)"
+    fi
     echo "- Info run         : $RUN_INFO"
 }
 trap cleanup SIGINT SIGTERM EXIT
 
 parse_hardware_data() {
-    if [ -z "$PARSER_EXEC" ] || [ ! -f "$RAW_LOG" ]; then
-        return
+    if [ -z "$TEGRASTATS_EXEC" ]; then
+        echo "[ERROR] Hardware CSV tidak dibuat karena tegrastats tidak tersedia."
+        return 1
     fi
+    if [ ! -s "$RAW_LOG" ]; then
+        echo "[ERROR] tegrastats tidak menghasilkan data. Log mentah dipertahankan: $RAW_LOG"
+        if [ -s "$HW_ERROR_LOG" ]; then
+            echo "[ERROR] Detail perekam hardware:"
+            cat "$HW_ERROR_LOG"
+        else
+            echo "[ERROR] Coba jalankan 'tegrastats --interval $TEGRA_INTERVAL_MS' secara manual."
+        fi
+        return 1
+    fi
+    if [ -z "$PARSER_EXEC" ]; then
+        echo "[ERROR] LogParser tidak tersedia. Log mentah dipertahankan: $RAW_LOG"
+        return 1
+    fi
+
     echo "[INFO] Memproses data hardware mentah menjadi CSV..."
-    if "$PARSER_EXEC" "$RAW_LOG" "$HW_CSV"; then
+    if "$PARSER_EXEC" "$RAW_LOG" "$HW_CSV" && [ -s "$HW_CSV" ]; then
         rm -f "$RAW_LOG"
-    else
-        echo "[ERROR] Gagal memproses data log. Log mentah tetap ada di: $RAW_LOG"
+        if [ ! -s "$HW_ERROR_LOG" ]; then
+            rm -f "$HW_ERROR_LOG"
+        fi
+        return 0
     fi
+
+    echo "[ERROR] Gagal memproses data log. Log mentah tetap ada di: $RAW_LOG"
+    return 1
 }
 
 # ==============================================================================
@@ -285,10 +327,36 @@ echo "[INFO] Input   : $INPUT_MODE ${INPUT_FILE:+($INPUT_FILE)}"
 echo "[INFO] Output  : $OUTPUT_MODE"
 echo "[INFO] Hasil   : $RUN_DIR"
 
-tegrastats --interval "$TEGRA_INTERVAL_MS" 2>/dev/null | \
-    awk '{ print strftime("%Y-%m-%d %H:%M:%S"), $0; fflush(); }' > "$RAW_LOG" &
-TEGRA_PID=$!
-echo "[INFO] tegrastats berjalan di background (PID: $TEGRA_PID)"
+TEGRA_PID=""
+HW_FORMATTER_PID=""
+if [ -n "$TEGRASTATS_EXEC" ]; then
+    rm -f "$HW_FIFO"
+    if mkfifo "$HW_FIFO"; then
+        HW_START_EPOCH_MS="$(date +%s%3N)"
+        echo "tegrastats_started_ms  : $HW_START_EPOCH_MS" >> "$RUN_INFO"
+        awk -v start_ms="$HW_START_EPOCH_MS" -v interval_ms="$TEGRA_INTERVAL_MS" '
+            {
+                sample_index = NR - 1
+                sample_ms = start_ms + (sample_index * interval_ms)
+                sample_seconds = int(sample_ms / 1000)
+                milliseconds = sample_ms - (sample_seconds * 1000)
+                printf "%s.%03d Sample=%d Hardware_Elapsed_ms=%d %s\n",
+                       strftime("%Y-%m-%d %H:%M:%S", sample_seconds),
+                       milliseconds, sample_index, sample_index * interval_ms, $0
+                fflush()
+            }
+        ' < "$HW_FIFO" > "$RAW_LOG" &
+        HW_FORMATTER_PID=$!
+        "$TEGRASTATS_EXEC" --interval "$TEGRA_INTERVAL_MS" \
+            > "$HW_FIFO" 2> "$HW_ERROR_LOG" &
+        TEGRA_PID=$!
+        echo "[INFO] tegrastats berjalan di background (PID: $TEGRA_PID)"
+    else
+        echo "[ERROR] Gagal membuat FIFO untuk perekam hardware: $HW_FIFO"
+    fi
+else
+    echo "[WARN] Benchmark dilanjutkan tanpa data hardware."
+fi
 
 export NVDS_ENABLE_LATENCY_MEASUREMENT=1
 

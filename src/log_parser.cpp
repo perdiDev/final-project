@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -18,7 +19,10 @@ int main(int argc, char* argv[]) {
     string outfile = argv[2];
 
     ifstream in(infile);
-    if (!in.is_open()) return 1;
+    if (!in.is_open()) {
+        cerr << "Gagal membuka log hardware: " << infile << "\n";
+        return 1;
+    }
 
     vector<string> lines;
     string line;
@@ -27,14 +31,17 @@ int main(int argc, char* argv[]) {
     }
     in.close();
 
-    if (lines.empty()) return 0;
+    if (lines.empty()) {
+        cerr << "Log hardware kosong: " << infile << "\n";
+        return 1;
+    }
 
     // 1. TAHAP PEMINDAIAN AWAL (Mencari jumlah Core CPU maksimal & Sensor Daya)
     int max_cores = 0;
     vector<string> power_sensors;
 
     regex cpu_rgx("CPU \\[([^\\]]+)\\]");
-    regex pwr_rgx("\\b([A-Z0-9_]+)\\s+(\\d+)/\\d+");
+    regex pwr_rgx("\\b([A-Z0-9_]+)\\s+(\\d+)(?:mW)?/\\d+(?:mW)?");
 
     for (const auto& l : lines) {
         smatch m;
@@ -65,7 +72,11 @@ int main(int argc, char* argv[]) {
 
     // 2. BUAT HEADER CSV
     ofstream out(outfile);
-    out << "Timestamp,RAM_MB,SWAP_MB,EMC_Persen,GPU_Persen";
+    if (!out.is_open()) {
+        cerr << "Gagal membuat CSV hardware: " << outfile << "\n";
+        return 1;
+    }
+    out << "Timestamp,Sample_Number,Hardware_Elapsed_ms,RAM_MB,SWAP_MB,EMC_Persen,GPU_Persen";
     for (int i = 1; i <= max_cores; ++i) {
         out << ",CPU_Core_" << i << "_Persen,CPU_Core_" << i << "_Freq_MHz";
     }
@@ -75,15 +86,20 @@ int main(int argc, char* argv[]) {
     out << "\n";
 
     // 3. TAHAP EKSTRAKSI & PENULISAN BARIS DATA
-    regex ts_rgx("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
+    regex ts_rgx("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?)");
+    regex sample_rgx("\\bSample=(\\d+)");
+    regex elapsed_rgx("\\bHardware_Elapsed_ms=(\\d+)");
     regex ram_rgx("RAM (\\d+)/");
     regex swap_rgx("SWAP (\\d+)/");
     regex emc_rgx("EMC_FREQ (\\d+)%");
     regex gpu_rgx("GR3D_FREQ (\\d+)%");
 
+    size_t written_rows = 0;
     for (const auto& l : lines) {
         smatch m;
         string ts = regex_search(l, m, ts_rgx) ? m[1].str() : "";
+        string sample = regex_search(l, m, sample_rgx) ? m[1].str() : "0";
+        string elapsed = regex_search(l, m, elapsed_rgx) ? m[1].str() : "0";
         string ram = regex_search(l, m, ram_rgx) ? m[1].str() : "0";
         string swap = regex_search(l, m, swap_rgx) ? m[1].str() : "0";
         string emc = regex_search(l, m, emc_rgx) ? m[1].str() : "0";
@@ -91,7 +107,8 @@ int main(int argc, char* argv[]) {
 
         if (ts.empty()) continue; // Lewati baris yang rusak
 
-        out << ts << "," << ram << "," << swap << "," << emc << "," << gpu;
+        out << ts << "," << sample << "," << elapsed << "," << ram << "," << swap << ","
+            << emc << "," << gpu;
 
         // Ekstrak CPU (Pisahkan Persentase dan Frekuensi)
         vector<pair<string, string>> core_data;
@@ -134,8 +151,14 @@ int main(int argc, char* argv[]) {
             else out << ",0";
         }
         out << "\n";
+        ++written_rows;
     }
 
     out.close();
+    if (written_rows == 0) {
+        cerr << "Tidak ada sampel tegrastats valid di: " << infile << "\n";
+        std::remove(outfile.c_str());
+        return 1;
+    }
     return 0;
 }

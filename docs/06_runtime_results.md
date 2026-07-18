@@ -83,10 +83,49 @@ langsung merata-ratakan kolom tersebut karena window ber-FPS tinggi akan memilik
 baris dan mendapat bobot lebih besar. Rumus di atas menghitung throughput setiap run langsung
 dari jumlah frame dan `Elapsed_ms`.
 
-Lakukan hal yang sama untuk `hardware_analysis.csv` (gabungkan dengan `pd.merge_asof` pada
-kolom `Timestamp` jika ingin mengaitkan FPS dengan GPU%/power pada waktu yang sama).
+## 6.4 Sinkronisasi FPS/Latency dengan Hardware
 
-## 6.4 Visualisasi yang Disarankan
+Kedua file memakai clock sistem yang sama. `fps.csv` memiliki timestamp milidetik per frame,
+sedangkan `hardware_analysis.csv` memiliki waktu nominal per sampel, `Sample_Number`, dan
+`Hardware_Elapsed_ms` dengan interval default satu detik. Untuk korelasi atau grafik,
+agregasikan frame menjadi window satu detik dahulu, kemudian pasangkan dengan sampel hardware
+terdekat:
+
+```python
+frames = pd.read_csv("fps.csv", parse_dates=["Timestamp"])
+hardware = pd.read_csv("hardware_analysis.csv", parse_dates=["Timestamp"])
+
+runtime_1s = (
+    frames.set_index("Timestamp")
+    .resample("1s")
+    .agg(
+        FPS=("Frame_Number", "count"),
+        Latency_mean_ms=("Latency_ms", "mean"),
+        Latency_p95_ms=("Latency_ms", lambda values: values.quantile(0.95)),
+    )
+    .dropna()
+    .reset_index()
+)
+
+combined = pd.merge_asof(
+    runtime_1s.sort_values("Timestamp"),
+    hardware.sort_values("Timestamp"),
+    on="Timestamp",
+    direction="nearest",
+    tolerance=pd.Timedelta("600ms"),
+)
+```
+
+Window pertama dan terakhir dapat berdurasi kurang dari satu detik; buang keduanya untuk
+analisis FPS per-window yang ketat. Untuk rata-rata hardware dan daya, tetap hitung langsung
+dari `hardware_analysis.csv`, bukan dari `combined`, agar satu sampel hardware tidak mendapat
+bobot berulang akibat banyaknya frame.
+
+Sinkronisasi hanya diperlukan untuk analisis hubungan waktu, misalnya FPS turun bersamaan
+dengan kenaikan GPU, suhu, atau daya. Untuk tabel ringkasan per-model, statistik runtime dan
+hardware dapat dihitung terpisah per run lalu digabung berdasarkan `run_dir`.
+
+## 6.5 Visualisasi yang Disarankan
 
 - **Box plot / violin plot** distribusi FPS per model (bukan cuma rata-rata) — menunjukkan
   stabilitas, bukan hanya kecepatan rata-rata.
