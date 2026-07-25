@@ -1,4 +1,5 @@
+app
 build/
+
 data/output/*
-DeepStreamZedyoloRTSP
 data/benchmark/*

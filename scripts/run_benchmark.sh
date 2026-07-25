@@ -184,16 +184,16 @@ OUTPUT_VIDEO_FILE="$RUN_DIR/pipeline_output.mp4"
 # ==============================================================================
 # CARI EXECUTABLE
 # ==============================================================================
-EXEC_PATH="$(find_executable DeepStreamZedyoloRTSP)"
+EXEC_PATH="$(find_executable app)"
 if [ -z "$EXEC_PATH" ]; then
-    echo "[ERROR] Executable DeepStreamZedyoloRTSP tidak ditemukan di ./ atau ./build/."
+    echo "[ERROR] Executable app tidak ditemukan di ./ atau ./build/."
     echo "        Jalankan './scripts/build.sh' terlebih dahulu."
     exit 1
 fi
 
-PARSER_EXEC="$(find_executable LogParser)"
+PARSER_EXEC="$(find_executable parser)"
 if [ -z "$PARSER_EXEC" ]; then
-    echo "[WARN] LogParser tidak ditemukan (./ atau ./build/). Log hardware mentah tidak akan"
+    echo "[WARN] parser tidak ditemukan (./ atau ./build/). Log hardware mentah tidak akan"
     echo "       diproses otomatis jadi CSV, tapi benchmark tetap berjalan."
 fi
 
@@ -301,7 +301,7 @@ parse_hardware_data() {
         return 1
     fi
     if [ -z "$PARSER_EXEC" ]; then
-        echo "[ERROR] LogParser tidak tersedia. Log mentah dipertahankan: $RAW_LOG"
+        echo "[ERROR] parser tidak tersedia. Log mentah dipertahankan: $RAW_LOG"
         return 1
     fi
 

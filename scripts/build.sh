@@ -13,7 +13,7 @@ cmake ..
 make -j$(nproc)
 
 # 5. Pindahkan file hasil build (yang berawalan "Deep") ke direktori parent
-mv Deep* ../
+mv app* ../
 
 # 6. Kembali ke direktori sebelumnya
 cd ..

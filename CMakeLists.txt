@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(DeepStreamZedyoloRTSP)
+project(app)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -30,5 +30,5 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 )
 
 # --- Build aplikasi Parser Log terpisah ---
-add_executable(LogParser src/log_parser.cpp)
+add_executable(parser src/log_parser.cpp)
 # LogParser hanya menggunakan library standar C++ bawaan, tidak perlu link GStreamer
