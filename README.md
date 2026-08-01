@@ -18,7 +18,7 @@ Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk perfor
 - **Normalisasi Format Video Otomatis**: Semua input (termasuk file video non-NV12 atau software decoded) secara otomatis dikonversi ke format `NV12` di dalam memori NVMM sebelum dikirim ke `nvstreammux` untuk mencegah ketidakcocokan format.
 - **Pelacakan Objek NvDCF**: `nvtracker` berjalan setelah primary inference menggunakan NvMultiObjectTracker dan menampilkan ID pelacakan pada hasil OSD. Profil tracker dapat diganti melalui `--tracker-config`.
 - **Graceful Shutdown Tanpa Data Korup**: Penanganan sinyal `Ctrl+C` (`SIGINT`/`SIGTERM`) terintegrasi langsung dengan GMainLoop bawaan GLib (`g_unix_signal_add`). Jika Anda menyimpan output ke file MP4, sistem akan mengirimkan sinyal EOS (*End of Stream*) dan menunggu hingga 10 detik agar file tertutup dengan aman sebelum program mati.
-- **Asynchronous Per-Frame Benchmark Logging**: FPS, PTS, elapsed time, dan latensi setiap frame dikirim melalui queue thread-safe non-blocking GLib (`GAsyncQueue`) lalu ditulis secara buffered oleh thread terpisah, sehingga operasi I/O tidak dilakukan pada jalur kritis pipeline.
+- **Asynchronous Per-Frame Benchmark Logging**: FPS, PTS, elapsed time, latensi end-to-end, serta **latensi per-komponen** setiap frame dikirim melalui queue thread-safe non-blocking GLib (`GAsyncQueue`) lalu ditulis secara buffered oleh thread terpisah, sehingga operasi I/O tidak dilakukan pada jalur kritis pipeline.
 
 ---
 

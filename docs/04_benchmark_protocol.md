@@ -73,7 +73,7 @@ pernah tertimpa** — aman untuk mengulang beberapa kali per model (lihat §4.3)
 Logger menghasilkan satu record untuk setiap frame dengan kolom:
 
 ```text
-Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms
+Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms,Lat_PreMux_ms,Lat_Mux_ms,Lat_Infer_ms,Lat_Tracker_ms,Lat_PreOSD_ms,Lat_OSD_ms,Lat_Output_ms
 ```
 
 - `Frame_Number`: nomor urut frame dari DeepStream.
@@ -81,7 +81,9 @@ Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms
 - `Elapsed_ms`: waktu wall-clock sejak pipeline mulai, untuk menghitung processing throughput.
 - `FPS`: throughput pada window wall-clock sekitar satu detik; nilainya dapat berulang pada
   beberapa frame dan bernilai `0` selama window pertama belum lengkap.
-- `Latency_ms`: latency frame yang dilaporkan DeepStream.
+- `Latency_ms`: latensi frame end-to-end yang dilaporkan oleh DeepStream (diukur mulai dari source / hardware decoder).
+- `Lat_PreMux_ms`: waktu yang dihabiskan frame di dalam decoder dan input queue sebelum memasuki `nvstreammux`.
+- `Lat_*_ms`: latensi per-komponen selanjutnya (Muxer, Inference, Tracker, PreOSD, OSD, Output) yang diukur menggunakan pad probe pada masing-masing elemen pipeline. Selisih waktu diambil saat buffer melintasi elemen-elemen tersebut. Total jumlah dari semua kolom `Lat_*` akan persis sama dengan `Latency_ms`.
 
 Input file dapat diproses lebih cepat daripada durasi pemutarannya. Karena itu, jumlah baris
 mengikuti **jumlah frame**, bukan jumlah detik wall-clock maupun durasi media. Penulisan CSV

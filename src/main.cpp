@@ -21,7 +21,10 @@
 #include <new>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
+#include <vector>
+#include <mutex>
 
 namespace {
 
@@ -53,6 +56,13 @@ struct BenchmarkData {
     double elapsedMs{0.0};
     double fps{0.0};
     double latencyMs{0.0};
+    double latencyPreMuxMs{0.0};
+    double latencyMuxMs{0.0};
+    double latencyInferMs{0.0};
+    double latencyTrackerMs{0.0};
+    double latencyPreOsdMs{0.0};
+    double latencyOsdMs{0.0};
+    double latencyOutputMs{0.0};
     gint64 wallClockUs{0};
 };
 
@@ -256,6 +266,16 @@ public:
     }
 
 private:
+    struct ComponentTimestamps {
+        SteadyClock::time_point muxIn;
+        SteadyClock::time_point inferIn;
+        SteadyClock::time_point trackerIn;
+        SteadyClock::time_point preOsdIn;
+        SteadyClock::time_point osdIn;
+        SteadyClock::time_point outputIn;
+        SteadyClock::time_point outputOut;
+    };
+
     struct MetricsState {
         SteadyClock::time_point fpsWindowStart{SteadyClock::now()};
         SteadyClock::time_point benchmarkStart{SteadyClock::now()};
@@ -392,7 +412,7 @@ private:
         if (!buildOutput(outputConverter)) {
             return false;
         }
-        return installOsdProbe(osd);
+        return installProbes(primaryInference, tracker, preOsdConverter, osd, outputConverter);
     }
 
     bool requestStreamMuxPad() {
@@ -682,19 +702,38 @@ private:
         return true;
     }
 
-    bool installOsdProbe(GstElement *osd) {
-        osdSinkPad_ = gst_element_get_static_pad(osd, "sink");
-        if (osdSinkPad_ == nullptr) {
-            g_printerr("Gagal mengambil sink pad nvdsosd.\n");
+    bool addProbe(GstPad *pad, GstPadProbeCallback callback) {
+        if (pad == nullptr) {
             return false;
         }
+        gulong probeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, callback, this, nullptr);
+        if (probeId == 0) {
+            return false;
+        }
+        gst_object_ref(pad);
+        probes_.push_back({pad, probeId});
+        return true;
+    }
 
-        osdProbeId_ = gst_pad_add_probe(osdSinkPad_, GST_PAD_PROBE_TYPE_BUFFER,
-                                        &DeepStreamApplication::onOsdBuffer, this, nullptr);
-        if (osdProbeId_ == 0) {
-            g_printerr("Gagal memasang OSD buffer probe.\n");
+    bool addProbe(GstElement *element, const char *padName, GstPadProbeCallback callback) {
+        GstPad *pad = gst_element_get_static_pad(element, padName);
+        if (pad == nullptr) {
+            g_printerr("Gagal mengambil pad %s dari elemen %s.\n", padName, GST_ELEMENT_NAME(element));
             return false;
         }
+        const bool res = addProbe(pad, callback);
+        gst_object_unref(pad);
+        return res;
+    }
+
+    bool installProbes(GstElement *primaryInference, GstElement *tracker, GstElement *preOsdConverter, GstElement *osd, GstElement *outputConverter) {
+        if (!addProbe(streamMuxSinkPad_, &DeepStreamApplication::onMuxSinkProbe)) return false;
+        if (!addProbe(primaryInference, "sink", &DeepStreamApplication::onInferSinkProbe)) return false;
+        if (!addProbe(tracker, "sink", &DeepStreamApplication::onTrackerSinkProbe)) return false;
+        if (!addProbe(preOsdConverter, "sink", &DeepStreamApplication::onPreOsdSinkProbe)) return false;
+        if (!addProbe(osd, "sink", &DeepStreamApplication::onOsdBuffer)) return false;
+        if (!addProbe(outputConverter, "sink", &DeepStreamApplication::onOutputSinkProbe)) return false;
+        if (!addProbe(outputConverter, "src", &DeepStreamApplication::onOutputSrcProbe)) return false;
         return true;
     }
 
@@ -746,7 +785,8 @@ private:
             g_printerr("Gagal membuka file benchmark: %s\n", config_.benchmarkFile.c_str());
         } else {
             if (needsHeader) {
-                logFile << "Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms\n";
+                logFile << "Timestamp,Frame_Number,Media_PTS_ms,Elapsed_ms,FPS,Latency_ms,"
+                        << "Lat_PreMux_ms,Lat_Mux_ms,Lat_Infer_ms,Lat_Tracker_ms,Lat_PreOSD_ms,Lat_OSD_ms,Lat_Output_ms\n";
             }
             logFile << std::fixed << std::setprecision(3);
         }
@@ -769,7 +809,9 @@ private:
 
             logFile << formatTimestamp(data->wallClockUs) << ',' << data->frameNumber << ','
                     << data->mediaPtsMs << ',' << data->elapsedMs << ',' << data->fps << ','
-                    << data->latencyMs << '\n';
+                    << data->latencyMs << ',' << data->latencyPreMuxMs << ',' << data->latencyMuxMs << ',' 
+                    << data->latencyInferMs << ',' << data->latencyTrackerMs << ',' << data->latencyPreOsdMs << ',' 
+                    << data->latencyOsdMs << ',' << data->latencyOutputMs << '\n';
             ++recordsSinceFlush;
             if (recordsSinceFlush >= kBenchmarkFlushIntervalRecords) {
                 logFile.flush();
@@ -825,8 +867,24 @@ private:
         return timestamp.data();
     }
 
+    void recordTimestamp(GstBuffer *buffer, SteadyClock::time_point ComponentTimestamps::*field) {
+        if (buffer == nullptr) return;
+        NvDsBatchMeta *batchMeta = gst_buffer_get_nvds_batch_meta(buffer);
+        if (batchMeta == nullptr) return;
+
+        auto now = SteadyClock::now();
+        std::lock_guard<std::mutex> lock(timestampsMutex_);
+        for (NvDsMetaList *l = batchMeta->frame_meta_list; l != nullptr; l = l->next) {
+            NvDsFrameMeta *frameMeta = static_cast<NvDsFrameMeta *>(l->data);
+            if (frameMeta && GST_CLOCK_TIME_IS_VALID(frameMeta->buf_pts)) {
+                (timestampsMap_[frameMeta->buf_pts].*field) = now;
+            }
+        }
+    }
+
     GstPadProbeReturn processOsdBuffer(GstPadProbeInfo *info) {
         GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        recordTimestamp(buffer, &ComponentTimestamps::osdIn);
         if (buffer == nullptr) {
             return GST_PAD_PROBE_OK;
         }
@@ -870,40 +928,91 @@ private:
             nvds_add_display_meta_to_frame(frameMeta, displayMeta);
         }
 
-        if (config_.benchmarkEnabled) {
-            NvDsFrameLatencyInfo latencyInfo[kStreamMuxBatchSize]{};
-            const guint measuredFrames = nvds_measure_buffer_latency(buffer, latencyInfo);
-            const double elapsedMs =
-                std::chrono::duration<double, std::milli>(now - metrics_.benchmarkStart).count();
-            const gint64 wallClockUs = g_get_real_time();
+        return GST_PAD_PROBE_OK;
+    }
 
-            guint latencyIndex = 0;
-            for (NvDsMetaList *frameNode = batchMeta->frame_meta_list; frameNode != nullptr;
-                 frameNode = frameNode->next) {
-                auto *frameMeta = static_cast<NvDsFrameMeta *>(frameNode->data);
-                if (frameMeta == nullptr) {
-                    continue;
-                }
+    GstPadProbeReturn processOutputSrcBuffer(GstPadProbeInfo *info) {
+        auto now = SteadyClock::now();
 
-                const guint currentLatencyIndex = latencyIndex++;
-                auto *data = new (std::nothrow) BenchmarkData;
-                if (data == nullptr || loggerQueue_ == nullptr) {
-                    delete data;
-                    continue;
-                }
+        if (!config_.benchmarkEnabled || loggerQueue_ == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
 
-                data->frameNumber = frameMeta->frame_num;
-                data->mediaPtsMs = GST_CLOCK_TIME_IS_VALID(frameMeta->buf_pts)
-                                       ? static_cast<double>(frameMeta->buf_pts) / GST_MSECOND
-                                       : -1.0;
-                data->elapsedMs = elapsedMs;
-                data->fps = metrics_.currentFps;
-                data->latencyMs = currentLatencyIndex < measuredFrames
-                                      ? latencyInfo[currentLatencyIndex].latency
-                                      : 0.0;
-                data->wallClockUs = wallClockUs;
-                g_async_queue_push(loggerQueue_, data);
+        GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        if (buffer == nullptr) return GST_PAD_PROBE_OK;
+
+        NvDsBatchMeta *batchMeta = gst_buffer_get_nvds_batch_meta(buffer);
+        if (batchMeta == nullptr) return GST_PAD_PROBE_OK;
+
+        NvDsFrameLatencyInfo latencyInfo[kStreamMuxBatchSize]{};
+        const guint measuredFrames = nvds_measure_buffer_latency(buffer, latencyInfo);
+        const double elapsedMs = std::chrono::duration<double, std::milli>(now - metrics_.benchmarkStart).count();
+        const gint64 wallClockUs = g_get_real_time();
+
+        guint latencyIndex = 0;
+        for (NvDsMetaList *frameNode = batchMeta->frame_meta_list; frameNode != nullptr;
+             frameNode = frameNode->next) {
+            auto *frameMeta = static_cast<NvDsFrameMeta *>(frameNode->data);
+            if (frameMeta == nullptr) {
+                continue;
             }
+
+            ComponentTimestamps ts;
+            if (GST_CLOCK_TIME_IS_VALID(frameMeta->buf_pts)) {
+                std::lock_guard<std::mutex> lock(timestampsMutex_);
+                auto it = timestampsMap_.find(frameMeta->buf_pts);
+                if (it != timestampsMap_.end()) {
+                    ts = it->second;
+                    ts.outputOut = now;
+                    timestampsMap_.erase(it);
+                }
+                if (timestampsMap_.size() > 1000) {
+                    timestampsMap_.clear();
+                }
+            }
+
+            auto delta = [](SteadyClock::time_point end, SteadyClock::time_point start) {
+                if (end.time_since_epoch().count() == 0 || start.time_since_epoch().count() == 0) return 0.0;
+                double val = std::chrono::duration<double, std::milli>(end - start).count();
+                return val > 0 ? val : 0.0;
+            };
+
+            double latMux = delta(ts.inferIn, ts.muxIn);
+            double latInfer = delta(ts.trackerIn, ts.inferIn);
+            double latTracker = delta(ts.preOsdIn, ts.trackerIn);
+            double latPreOsd = delta(ts.osdIn, ts.preOsdIn);
+            double latOsd = delta(ts.outputIn, ts.osdIn);
+            double latOutput = delta(ts.outputOut, ts.outputIn);
+
+            const guint currentLatencyIndex = latencyIndex++;
+            double currentLatency = currentLatencyIndex < measuredFrames ? latencyInfo[currentLatencyIndex].latency : 0.0;
+            
+            double sumComponents = latMux + latInfer + latTracker + latPreOsd + latOsd + latOutput;
+            double latPreMux = currentLatency - sumComponents;
+            if (latPreMux < 0) latPreMux = 0;
+
+            auto *data = new (std::nothrow) BenchmarkData;
+            if (data == nullptr) {
+                continue;
+            }
+
+            data->frameNumber = frameMeta->frame_num;
+            data->mediaPtsMs = GST_CLOCK_TIME_IS_VALID(frameMeta->buf_pts)
+                                   ? static_cast<double>(frameMeta->buf_pts) / GST_MSECOND
+                                   : -1.0;
+            data->elapsedMs = elapsedMs;
+            data->fps = metrics_.currentFps;
+            data->latencyMs = currentLatency;
+            data->latencyPreMuxMs = latPreMux;
+            data->latencyMuxMs = latMux;
+            data->latencyInferMs = latInfer;
+            data->latencyTrackerMs = latTracker;
+            data->latencyPreOsdMs = latPreOsd;
+            data->latencyOsdMs = latOsd;
+            data->latencyOutputMs = latOutput;
+            data->wallClockUs = wallClockUs;
+            
+            g_async_queue_push(loggerQueue_, data);
         }
 
         return GST_PAD_PROBE_OK;
@@ -1017,8 +1126,45 @@ private:
         static_cast<DeepStreamApplication *>(userData)->processDecodePad(newPad);
     }
 
+    static GstPadProbeReturn onMuxSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        if (buffer) {
+            GstClockTime pts = GST_BUFFER_PTS(buffer);
+            if (GST_CLOCK_TIME_IS_VALID(pts)) {
+                auto *app = static_cast<DeepStreamApplication *>(userData);
+                std::lock_guard<std::mutex> lock(app->timestampsMutex_);
+                app->timestampsMap_[pts].muxIn = SteadyClock::now();
+            }
+        }
+        return GST_PAD_PROBE_OK;
+    }
+
+    static GstPadProbeReturn onInferSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        static_cast<DeepStreamApplication *>(userData)->recordTimestamp(GST_PAD_PROBE_INFO_BUFFER(info), &ComponentTimestamps::inferIn);
+        return GST_PAD_PROBE_OK;
+    }
+
+    static GstPadProbeReturn onTrackerSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        static_cast<DeepStreamApplication *>(userData)->recordTimestamp(GST_PAD_PROBE_INFO_BUFFER(info), &ComponentTimestamps::trackerIn);
+        return GST_PAD_PROBE_OK;
+    }
+
+    static GstPadProbeReturn onPreOsdSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        static_cast<DeepStreamApplication *>(userData)->recordTimestamp(GST_PAD_PROBE_INFO_BUFFER(info), &ComponentTimestamps::preOsdIn);
+        return GST_PAD_PROBE_OK;
+    }
+
     static GstPadProbeReturn onOsdBuffer(GstPad *, GstPadProbeInfo *info, gpointer userData) {
         return static_cast<DeepStreamApplication *>(userData)->processOsdBuffer(info);
+    }
+
+    static GstPadProbeReturn onOutputSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        static_cast<DeepStreamApplication *>(userData)->recordTimestamp(GST_PAD_PROBE_INFO_BUFFER(info), &ComponentTimestamps::outputIn);
+        return GST_PAD_PROBE_OK;
+    }
+
+    static GstPadProbeReturn onOutputSrcProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processOutputSrcBuffer(info);
     }
 
     static void removeSource(guint &sourceId) {
@@ -1029,10 +1175,13 @@ private:
     }
 
     void cleanup() {
-        if (osdSinkPad_ != nullptr && osdProbeId_ != 0) {
-            gst_pad_remove_probe(osdSinkPad_, osdProbeId_);
-            osdProbeId_ = 0;
+        for (auto &probe : probes_) {
+            if (probe.first && probe.second) {
+                gst_pad_remove_probe(probe.first, probe.second);
+                gst_object_unref(probe.first);
+            }
         }
+        probes_.clear();
 
         if (pipeline_ != nullptr) {
             gst_element_set_state(pipeline_, GST_STATE_NULL);
@@ -1051,10 +1200,6 @@ private:
         if (fileDecodeSinkPad_ != nullptr) {
             gst_object_unref(fileDecodeSinkPad_);
             fileDecodeSinkPad_ = nullptr;
-        }
-        if (osdSinkPad_ != nullptr) {
-            gst_object_unref(osdSinkPad_);
-            osdSinkPad_ = nullptr;
         }
 
         removeSource(rtspServerSourceId_);
@@ -1085,8 +1230,7 @@ private:
     GstElement *streamMux_{nullptr};
     GstPad *streamMuxSinkPad_{nullptr};
     GstPad *fileDecodeSinkPad_{nullptr};
-    GstPad *osdSinkPad_{nullptr};
-    gulong osdProbeId_{0};
+    std::vector<std::pair<GstPad*, gulong>> probes_;
     GstRTSPServer *rtspServer_{nullptr};
     guint rtspServerSourceId_{0};
     guint eosShutdownTimeoutId_{0};
@@ -1096,6 +1240,8 @@ private:
     GAsyncQueue *loggerQueue_{nullptr};
     std::thread loggerThread_;
     char loggerStopToken_{0};
+    std::unordered_map<GstClockTime, ComponentTimestamps> timestampsMap_;
+    std::mutex timestampsMutex_;
     MetricsState metrics_;
     bool eosRequested_{false};
     bool pipelineError_{false};
