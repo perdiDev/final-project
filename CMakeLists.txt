@@ -32,3 +32,30 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 # --- Build aplikasi Parser Log terpisah ---
 add_executable(parser src/log_parser.cpp)
 # LogParser hanya menggunakan library standar C++ bawaan, tidak perlu link GStreamer
+
+# --- Parser custom untuk output EfficientNMS_TRT ---
+# Library ini sengaja terpisah dari parser YOLO baseline agar kedua jalur
+# inference dapat dipilih secara independen melalui file konfigurasi nvinfer.
+add_library(efficientnms_parser SHARED src/efficientnms_parser.cpp)
+target_include_directories(efficientnms_parser PRIVATE
+    /opt/nvidia/deepstream/deepstream/sources/includes
+)
+file(GLOB CUDA_INCLUDE_CANDIDATES
+    "/usr/local/cuda*/include"
+    "/usr/local/cuda*/targets/*/include"
+)
+find_path(CUDA_RUNTIME_INCLUDE_DIR
+    cuda_runtime_api.h
+    HINTS ${CUDA_INCLUDE_CANDIDATES}
+)
+if(NOT CUDA_RUNTIME_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "cuda_runtime_api.h tidak ditemukan; CUDA Toolkit diperlukan untuk parser EfficientNMS")
+endif()
+target_include_directories(efficientnms_parser PRIVATE
+    ${CUDA_RUNTIME_INCLUDE_DIR}
+)
+set_target_properties(efficientnms_parser PROPERTIES
+    OUTPUT_NAME "nvdsinfer_custom_impl_EfficientNMS"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+)

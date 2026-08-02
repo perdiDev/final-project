@@ -30,17 +30,24 @@ Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk perfor
 ├── config/
 │   ├── deepstream_app.txt      # Konfigurasi referensi DeepStream
 │   ├── pgie_coco.txt           # Konfigurasi model COCO
-│   └── pgie_yolov8n.txt        # Konfigurasi nvinfer untuk YOLOv8n
+│   ├── pgie_yolov8n.txt         # Konfigurasi nvinfer baseline
+│   ├── pgie_yolov8n_kitti_efficientnms.txt # Primary GIE EfficientNMS
+│   └── deepstream_app_efficientnms.txt # Pipeline alternatif EfficientNMS
 ├── labels/
 │   ├── labels_coco.txt         # Nama label kelas dataset COCO
 │   └── labels_kitti_custom.txt # Nama label kelas dataset KITTI
 ├── lib/
-│   └── libnvdsinfer_custom_impl_Yolo.so # Custom bounding box parser YOLO
+│   ├── libnvdsinfer_custom_impl_Yolo.so # Parser bounding box baseline
+│   └── libnvdsinfer_custom_impl_EfficientNMS.so # Parser empat output NMS
 ├── models/
 │   ├── yolov8n.engine          # File engine TensorRT YOLOv8 (FP16/INT8)
 │   └── yolov8n.onnx            # File model ONNX asli
 ├── src/
-│   └── main.cpp                # Source code aplikasi utama (direfaktor)
+│   ├── main.cpp                # Source code aplikasi utama (direfaktor)
+│   └── efficientnms_parser.cpp # Parser Primary GIE EfficientNMS
+├── utils/
+│   ├── build_efficientnms_engine.py # Builder EfficientNMS_TRT GPU
+│   └── README.md               # Cara build dan kontrak output engine
 └── data/
     ├── input/
     │   └── video_testing.mp4   # Sampel file video pengujian
