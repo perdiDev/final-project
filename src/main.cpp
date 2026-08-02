@@ -7,13 +7,16 @@
 #include <gstnvdsmeta.h>
 #include <nvll_osd_struct.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <initializer_list>
@@ -46,9 +49,8 @@ constexpr guint kBenchmarkFlushIntervalRecords = 256;
 constexpr char kRtspMountPoint[] = "/ds-test";
 constexpr char kTrackerLibraryPath[] =
     "/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so";
-constexpr char kDefaultTrackerConfigPath[] =
-    "/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/"
-    "config_tracker_NvDCF_perf.yml";
+constexpr char kTrackerConfigDirectory[] = "config";
+constexpr char kTrackerConfigPrefix[] = "tracker_";
 
 struct BenchmarkData {
     guint64 frameNumber{0};
@@ -79,7 +81,7 @@ enum class OutputMode {
 
 struct AppConfig {
     std::string inferenceConfigPath{"config/pgie_yolov8n.txt"};
-    std::string trackerConfigPath{kDefaultTrackerConfigPath};
+    std::string trackerConfigPath;
     InputMode inputMode{InputMode::Zed};
     guint zedCameraFps{kDefaultZedCameraFps};
     std::string inputFile;
@@ -111,10 +113,77 @@ const char *toString(OutputMode mode) {
     return "unknown";
 }
 
+using TrackerConfigEntry = std::pair<std::string, std::string>;
+
+std::vector<TrackerConfigEntry> listTrackerConfigs() {
+    namespace fs = std::filesystem;
+    std::vector<TrackerConfigEntry> configs;
+    std::error_code error;
+    const fs::path directory(kTrackerConfigDirectory);
+    if (!fs::is_directory(directory, error)) {
+        return configs;
+    }
+
+    for (const fs::directory_entry &entry : fs::directory_iterator(directory, error)) {
+        if (error || !entry.is_regular_file(error)) {
+            continue;
+        }
+
+        const fs::path path = entry.path();
+        const std::string filename = path.filename().string();
+        const bool isYaml = path.extension() == ".yml" || path.extension() == ".yaml";
+        if (!isYaml || filename.rfind(kTrackerConfigPrefix, 0) != 0) {
+            continue;
+        }
+
+        const std::string name = path.stem().string().substr(std::strlen(kTrackerConfigPrefix));
+        if (!name.empty()) {
+            configs.emplace_back(name, path.string());
+        }
+    }
+
+    std::sort(configs.begin(), configs.end(),
+              [](const TrackerConfigEntry &left, const TrackerConfigEntry &right) {
+                  return left.first < right.first;
+              });
+    return configs;
+}
+
+
+
+bool resolveTrackerConfig(AppConfig &config) {
+    namespace fs = std::filesystem;
+    const std::vector<TrackerConfigEntry> configs = listTrackerConfigs();
+
+    if (!config.trackerConfigPath.empty()) {
+        std::error_code error;
+        if (!fs::is_regular_file(fs::path(config.trackerConfigPath), error)) {
+            g_printerr("Config tracker tidak ditemukan: %s\n", config.trackerConfigPath.c_str());
+            return false;
+        }
+        return true;
+    }
+
+    if (configs.empty()) {
+        g_printerr("Tidak ada config tracker di %s/tracker_*.yml atau *.yaml.\n",
+                   kTrackerConfigDirectory);
+        return false;
+    }
+
+    const auto defaultConfig = std::find_if(
+        configs.begin(), configs.end(),
+        [](const TrackerConfigEntry &entry) { return entry.first == "nvdcf"; });
+    const TrackerConfigEntry &selected =
+        defaultConfig != configs.end() ? *defaultConfig : configs.front();
+    config.trackerConfigPath = selected.second;
+    return true;
+}
+
 void printUsage(const char *programName) {
+    const std::vector<TrackerConfigEntry> configs = listTrackerConfigs();
     g_print("\nPenggunaan: %s [opsi]\n", programName);
     g_print("  --config <path>              : Config nvinfer/YOLO (default: config/pgie_yolov8n.txt)\n");
-    g_print("  --tracker-config <path>      : Config NvMultiObjectTracker/NvDCF\n");
+    g_print("  --tracker <path>              : Path file YAML tracker (default dipilih dari config/tracker_*.yml)\n");
     g_print("  --input <zed|file>           : Sumber video (default: zed)\n");
     g_print("  --camera-fps <fps>           : FPS kamera ZED: 15, 30, 60, 100, 120 (default: 30)\n");
     g_print("  --input-file <path|URI>      : Video jika input=file\n");
@@ -158,7 +227,7 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
                 return ParseResult::Error;
             }
             config.inferenceConfigPath = std::move(value);
-        } else if (argument == "--tracker-config") {
+        } else if (argument == "--tracker") {
             if (!readRequiredValue(argc, argv, i, argument, value)) {
                 return ParseResult::Error;
             }
@@ -217,11 +286,18 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
             if (!readRequiredValue(argc, argv, i, argument, config.outputFile)) {
                 return ParseResult::Error;
             }
+        } else {
+            g_printerr("Opsi tidak dikenal: %s\n", argument.c_str());
+            return ParseResult::Error;
         }
     }
 
     if (config.inputMode == InputMode::File && config.inputFile.empty()) {
         g_printerr("Input file harus diisi dengan --input-file.\n");
+        return ParseResult::Error;
+    }
+
+    if (!resolveTrackerConfig(config)) {
         return ParseResult::Error;
     }
 
@@ -293,7 +369,7 @@ private:
         }
         g_print("Output   : %s %s\n", toString(config_.outputMode),
                 config_.outputMode == OutputMode::File ? config_.outputFile.c_str() : "");
-        g_print("Tracker  : NvDCF (%s)\n", config_.trackerConfigPath.c_str());
+        g_print("Tracker  : %s\n", config_.trackerConfigPath.c_str());
         g_print("============================\n");
     }
 

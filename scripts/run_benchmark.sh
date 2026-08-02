@@ -39,7 +39,8 @@ TEGRA_INTERVAL_MS=1000
 # ---- Default (mengikuti protokol benchmark: sumber input konsisten & terkontrol) ----
 MODEL_NAME=""
 CONFIG_FILE=""
-TRACKER_CONFIG=""
+TRACKER=""
+TRACKER_PATH=""
 INPUT_MODE="file"
 INPUT_FILE="data/input/video_testing.mp4"
 CAMERA_FPS="30"
@@ -72,13 +73,45 @@ list_models() {
     done
 }
 
+list_trackers() {
+    for f in "$CONFIG_DIR"/tracker_*.yml "$CONFIG_DIR"/tracker_*.yaml; do
+        [ -f "$f" ] || continue
+        local base
+        base="$(basename "$f")"
+        base="${base#tracker_}"
+        base="${base%.yml}"
+        base="${base%.yaml}"
+        echo "$base"
+    done | sort -u
+}
+
+tracker_config_for() {
+    local tracker_name="$1"
+    local candidate
+    for candidate in "$CONFIG_DIR/tracker_${tracker_name}.yml" "$CONFIG_DIR/tracker_${tracker_name}.yaml"; do
+        if [ -f "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+default_tracker() {
+    if [ -f "$CONFIG_DIR/tracker_nvdcf.yml" ] || [ -f "$CONFIG_DIR/tracker_nvdcf.yaml" ]; then
+        echo "nvdcf"
+    else
+        list_trackers | sed -n '1p'
+    fi
+}
+
 print_usage() {
     cat <<EOF
 Penggunaan: $0 [opsi]
 
   --model <nama>                Nama model, lihat --list (contoh: yolov8n_kitti)
   --config <path>                Path config pgie kustom (override --model)
-  --tracker-config <path>        Path config tracker kustom (default: profil NvDCF perf bawaan DeepStream)
+  --tracker <path>              Path file YAML tracker (default dipilih otomatis dari config/tracker_*.yml)
   --input <zed|file>              Sumber input (default: $INPUT_MODE)
   --input-file <path>            File video jika --input file (default: $INPUT_FILE)
   --camera-fps <15|30|60|100|120> FPS kamera ZED jika --input zed (default: $CAMERA_FPS)
@@ -99,7 +132,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --model) MODEL_NAME="${2:-}"; shift 2 ;;
         --config) CONFIG_FILE="${2:-}"; shift 2 ;;
-        --tracker-config) TRACKER_CONFIG="${2:-}"; shift 2 ;;
+        --tracker) TRACKER="${2:-}"; shift 2 ;;
         --input) INPUT_MODE="${2:-}"; shift 2 ;;
         --input-file) INPUT_FILE="${2:-}"; shift 2 ;;
         --camera-fps) CAMERA_FPS="${2:-}"; shift 2 ;;
@@ -114,6 +147,8 @@ done
 if [ "$LIST_ONLY" -eq 1 ]; then
     echo "Model tersedia (dari $CONFIG_DIR/pgie_*.txt):"
     list_models | sed 's/^/  - /'
+    echo "Tracker tersedia (dari $CONFIG_DIR/tracker_*.yml atau *.yaml):"
+    list_trackers | sed 's/^/  - /'
     exit 0
 fi
 
@@ -167,6 +202,43 @@ if [ "$INPUT_MODE" == "file" ] && [ ! -f "$INPUT_FILE" ]; then
 fi
 
 # ==============================================================================
+# PILIH TRACKER (interaktif jika belum ditentukan lewat --tracker)
+# ==============================================================================
+if [ -z "$TRACKER" ]; then
+    mapfile -t AVAILABLE_TRACKERS < <(list_trackers)
+    if [ ${#AVAILABLE_TRACKERS[@]} -eq 0 ]; then
+        echo "[ERROR] Tidak ada file $CONFIG_DIR/tracker_*.yml atau *.yaml ditemukan."
+        exit 1
+    fi
+    echo ""
+    echo "=== Pilih Tracker untuk Benchmark ==="
+    for i in "${!AVAILABLE_TRACKERS[@]}"; do
+        printf "  [%d] %s\n" "$((i + 1))" "${AVAILABLE_TRACKERS[$i]}"
+    done
+    read -rp "Masukkan nomor tracker: " T_CHOICE
+    if ! [[ "$T_CHOICE" =~ ^[0-9]+$ ]] || [ "$T_CHOICE" -lt 1 ] || [ "$T_CHOICE" -gt "${#AVAILABLE_TRACKERS[@]}" ]; then
+        echo "[ERROR] Pilihan tracker tidak valid."
+        exit 1
+    fi
+    TRACKER="${AVAILABLE_TRACKERS[$((T_CHOICE - 1))]}"
+    TRACKER_PATH="$(tracker_config_for "$TRACKER")"
+else
+    # Jika --tracker diberikan via argumen terminal, cek apakah itu path langsung atau nama
+    if [ -f "$TRACKER" ]; then
+        TRACKER_PATH="$TRACKER"
+    else
+        TRACKER_PATH="$(tracker_config_for "$TRACKER")"
+    fi
+fi
+
+if [ -z "$TRACKER_PATH" ] || [ ! -f "$TRACKER_PATH" ]; then
+    echo "[ERROR] Config tracker tidak ditemukan: ${TRACKER_PATH:-$TRACKER}"
+    echo "        Pilihan file yang tersedia:"
+    list_trackers | sed 's/^/  - /'
+    exit 1
+fi
+
+# ==============================================================================
 # SIAPKAN FOLDER HASIL PER-MODEL & PER-RUN (tidak pernah menimpa run lain)
 # ==============================================================================
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
@@ -208,9 +280,8 @@ fi
 # ==============================================================================
 APP_ARGS=(--config "$CONFIG_FILE" --benchmark "$FPS_CSV" --input "$INPUT_MODE" --output "$OUTPUT_MODE")
 
-if [ -n "$TRACKER_CONFIG" ]; then
-    APP_ARGS+=(--tracker-config "$TRACKER_CONFIG")
-fi
+APP_ARGS+=(--tracker "$TRACKER_PATH")
+TRACKER_LABEL="$TRACKER_PATH"
 
 if [ "$INPUT_MODE" == "file" ]; then
     APP_ARGS+=(--input-file "$INPUT_FILE")
@@ -228,7 +299,8 @@ fi
 {
     echo "model                  : $MODEL_NAME"
     echo "config_file            : $CONFIG_FILE"
-    echo "tracker_config         : ${TRACKER_CONFIG:-<default DeepStream NvDCF perf profile>}"
+    echo "tracker                : $TRACKER_LABEL"
+    echo "tracker_path           : $TRACKER_PATH"
     echo "input_mode             : $INPUT_MODE"
     [ "$INPUT_MODE" == "file" ] && echo "input_file             : $INPUT_FILE"
     [ "$INPUT_MODE" == "zed" ] && echo "camera_fps             : $CAMERA_FPS"

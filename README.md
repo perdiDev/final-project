@@ -16,7 +16,7 @@ Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk perfor
   - **Input**: Mendukung kamera live **ZED** (`zedsrc`) atau file video lokal (menggunakan `uridecodebin`).
   - **Output**: Mendukung pancaran jaringan **RTSP**, display monitor lokal **NV3D** (`nv3dsink`), atau penyimpanan aman file video lokal **MP4**.
 - **Normalisasi Format Video Otomatis**: Semua input (termasuk file video non-NV12 atau software decoded) secara otomatis dikonversi ke format `NV12` di dalam memori NVMM sebelum dikirim ke `nvstreammux` untuk mencegah ketidakcocokan format.
-- **Pelacakan Objek NvDCF**: `nvtracker` berjalan setelah primary inference menggunakan NvMultiObjectTracker dan menampilkan ID pelacakan pada hasil OSD. Profil tracker dapat diganti melalui `--tracker-config`.
+- **Pelacakan Objek Multi-Algoritma**: `nvtracker` berjalan setelah primary inference menggunakan NvMultiObjectTracker dan menampilkan ID pelacakan pada hasil OSD. Profil YAML dibaca dinamis dari `config/tracker_*.yml`/`*.yaml`; gunakan `--tracker <path-yaml>`.
 - **Graceful Shutdown Tanpa Data Korup**: Penanganan sinyal `Ctrl+C` (`SIGINT`/`SIGTERM`) terintegrasi langsung dengan GMainLoop bawaan GLib (`g_unix_signal_add`). Jika Anda menyimpan output ke file MP4, sistem akan mengirimkan sinyal EOS (*End of Stream*) dan menunggu hingga 10 detik agar file tertutup dengan aman sebelum program mati.
 - **Asynchronous Per-Frame Benchmark Logging**: FPS, PTS, elapsed time, latensi end-to-end, serta **latensi per-komponen** setiap frame dikirim melalui queue thread-safe non-blocking GLib (`GAsyncQueue`) lalu ditulis secara buffered oleh thread terpisah, sehingga operasi I/O tidak dilakukan pada jalur kritis pipeline.
 
@@ -32,6 +32,9 @@ Kode aplikasi ini telah direfaktor menggunakan standar C++17 modern untuk perfor
 │   ├── pgie_coco.txt           # Konfigurasi model COCO
 │   ├── pgie_yolov8n.txt         # Konfigurasi nvinfer baseline
 │   ├── pgie_yolov8n_kitti_efficientnms.txt # Primary GIE EfficientNMS
+│   ├── tracker_nvsort.yml        # Profil NvSORT
+│   ├── tracker_nvdcf.yml         # Profil NvDCF
+│   ├── tracker_nvdcf_perf.yml    # Profil NvDCF custom/performance
 │   └── deepstream_app_efficientnms.txt # Pipeline alternatif EfficientNMS
 ├── labels/
 │   ├── labels_coco.txt         # Nama label kelas dataset COCO
@@ -152,7 +155,7 @@ Aplikasi mendukung berbagai parameter dinamis yang dapat disesuaikan saat dijala
 | Parameter | Deskripsi | Nilai Default |
 | :--- | :--- | :--- |
 | `--config <path>` | Lokasi file konfigurasi model YOLO | `config/pgie_yolov8n.txt` |
-| `--tracker-config <path>` | Lokasi konfigurasi low-level NvMultiObjectTracker | Profil `config_tracker_NvDCF_perf.yml` dari DeepStream |
+| `--tracker <path>` | Path file YAML tracker | Profil `nvdcf` jika tersedia, jika tidak memakai file pertama |
 | `--input <zed\|file>` | Mode sumber input video | `zed` |
 | `--camera-fps <fps>` | Frame rate kamera ZED (`15`, `30`, `60`, `100`, atau `120`) | `30` |
 | `--input-file <path>` | Lokasi file video (jika input adalah `file`) | *(Wajib diisi jika input=file)* |
@@ -176,12 +179,21 @@ Kamera ZED dibuka pada 30 FPS secara default. Frame rate lain dapat dipilih sesu
 ./DeepStreamZedyoloRTSP --input zed --camera-fps 60 --output rtsp
 ```
 
-Secara default pipeline memakai profil NvDCF performa dari instalasi DeepStream. Untuk memilih profil lain:
+Secara default pipeline memilih `config/tracker_nvdcf.yml` jika file tersebut tersedia. Untuk memilih profil lain:
+
+```bash
+./DeepStreamZedyoloRTSP --input zed --output rtsp --tracker nvsort
+./DeepStreamZedyoloRTSP --input zed --output rtsp --tracker nvdcf_perf
+```
+
+Gunakan path YAML secara langsung melalui `--tracker`:
 
 ```bash
 ./DeepStreamZedyoloRTSP --input zed --output rtsp \
-  --tracker-config /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_accuracy.yml
+  --tracker /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_accuracy.yml
 ```
+
+
 
 #### 2. Input File Video ➜ Output Simpan MP4 Lokal (Aman & Rapih)
 ```bash

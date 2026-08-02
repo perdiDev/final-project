@@ -53,7 +53,7 @@ dari perbedaan setting inferensi.
 | Input | `zedsrc` (ZED) atau `uridecodebin` (file) | Sumber video, dinormalisasi ke NV12 di NVMM |
 | Batching | `nvstreammux` | Menggabungkan stream jadi satu batch (batch-size=1) |
 | Inferensi | `nvinfer` | Primary GIE — menjalankan model YOLO via TensorRT |
-| Tracking | `nvtracker` (profil NvDCF) | Menjaga ID objek antar frame |
+| Tracking | `nvtracker` (profil YAML dinamis) | Menjaga ID objek antar frame; profil dipilih melalui `--tracker <nama|path>` |
 | Render | `nvdsosd` | Menggambar bounding box, label, dan teks FPS |
 | Output | `nvv4l2h264enc`/`x264enc` → RTSP / `nv3dsink` / `filesink` (mp4) | Menyalurkan hasil |
 | *(paralel)* Benchmark | Pad probe di sink OSD → `GAsyncQueue` → thread logger | Mencatat FPS + latensi ke CSV tanpa mengganggu pipeline |

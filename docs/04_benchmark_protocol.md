@@ -19,7 +19,7 @@ pengujian), variabel berikut dijaga tetap sama di setiap run:
 | Sumber input | File video yang sama (`data/input/video_testing.mp4`) | Live ZED feed punya konten adegan yang tidak identik antar run; file memastikan setiap model "melihat" input yang persis sama |
 | Mode output | `file` (encode ke MP4) untuk seluruh model | Supaya overhead encoding/muxing konstan di semua run, tidak bias ke satu model |
 | Precision | FP16 (`network-mode=2`) di semua config | Precision bukan variabel bebas pada eksperimen ini |
-| Tracker config | Profil NvDCF perf bawaan DeepStream (default) | Kecuali sedang sengaja meneliti pengaruh tracker |
+| Tracker config | `config/tracker_nvdcf.yml` jika tersedia, atau profil tracker pertama yang ditemukan | Untuk eksperimen pengaruh tracker, gunakan `--tracker <path-yaml>` sesuai file `config/tracker_*.yml`/`*.yaml` yang tersedia |
 | Jetson power mode | Tetap (catat dengan `nvpmodel -q`, idealnya `jetson_clocks` aktif) | Perubahan power mode di tengah eksperimen membuat FPS/daya antar model tidak sebanding |
 | Durasi/panjang klip | Sama untuk semua model (gunakan `--duration <detik>`) | Supaya jumlah frame yang diukur & window statistik konsisten |
 
