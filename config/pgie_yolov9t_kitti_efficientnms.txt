@@ -1,0 +1,27 @@
+[property]
+gpu-id=0
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+
+# Engine hasil utils/build_efficientnms_engine.py
+onnx-file=../models/yolov9t_kitti.onnx
+model-engine-file=../models/yolov9t_kitti_efficientnms.engine
+
+network-mode=2
+num-detected-classes=3
+gie-unique-id=1
+process-mode=1
+network-type=0
+maintain-aspect-ratio=1
+cluster-mode=4
+batch-size=1
+
+# Empat output plugin EfficientNMS_TRT
+output-blob-names=num_detections;detection_boxes;detection_scores;detection_classes
+parse-bbox-func-name=NvDsInferParseEfficientNMS
+custom-lib-path=../lib/libnvdsinfer_custom_impl_EfficientNMS.so
+labelfile-path=../labels/labels_kitti_custom.txt
+
+[class-attrs-all]
+# NMS sudah dilakukan di GPU oleh EfficientNMS_TRT.
+pre-cluster-threshold=0.05
