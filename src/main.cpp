@@ -452,6 +452,10 @@ private:
 
         GstElement *streamMux = createElement("nvstreammux", "stream-muxer");
         GstElement *primaryInference = createElement("nvinfer", "primary-inference");
+
+	GstElement *queueInfer = createElement("queue", "queue-infer");
+        GstElement *queueTracker = createElement("queue", "queue-tracker");
+        GstElement *queueOsd = createElement("queue", "queue-osd");
         GstElement *tracker = createElement("nvtracker", "object-tracker");
         GstElement *preOsdConverter =
             createElement("nvvideoconvert", "pre-osd-converter");
@@ -459,7 +463,8 @@ private:
         GstElement *outputConverter =
             createElement("nvvideoconvert", "output-converter");
         if (streamMux == nullptr || primaryInference == nullptr || tracker == nullptr ||
-            preOsdConverter == nullptr || osd == nullptr || outputConverter == nullptr) {
+            preOsdConverter == nullptr || osd == nullptr || outputConverter == nullptr || queueInfer == nullptr ||
+	    queueTracker == nullptr || queueOsd == nullptr) {
             return false;
         }
 
@@ -479,7 +484,7 @@ private:
                      "display-tracking-id", TRUE, nullptr);
 
         if (!linkElements(
-                {streamMux_, primaryInference, tracker, preOsdConverter, osd, outputConverter})) {
+                {streamMux_, primaryInference, queueInfer, tracker, queueTracker, preOsdConverter, osd, queueOsd, outputConverter})) {
             return false;
         }
         if (!buildInput()) {
