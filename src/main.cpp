@@ -22,6 +22,7 @@
 #include <initializer_list>
 #include <memory>
 #include <new>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -89,6 +90,8 @@ struct AppConfig {
     std::string outputFile{"output.mp4"};
     bool benchmarkEnabled{false};
     std::string benchmarkFile{"benchmark_result.txt"};
+    bool detectionDumpEnabled{false};
+    std::string detectionDumpFile{"detections.jsonl"};
 };
 
 enum class ParseResult {
@@ -190,6 +193,8 @@ void printUsage(const char *programName) {
     g_print("  --output <rtsp|monitor|file> : Jenis output (default: rtsp)\n");
     g_print("  --output-file <path>         : File MP4 jika output=file (default: output.mp4)\n");
     g_print("  --benchmark [path]           : Aktifkan CSV benchmark (default: benchmark_result.txt)\n");
+    g_print("  --dump-detections [path]     : Dump deteksi mentah PGIE per frame ke JSON Lines\n");
+    g_print("                                  (default: detections.jsonl) - untuk evaluasi mAP as-deployed\n");
     g_print("  --help, -h                   : Tampilkan bantuan ini\n\n");
 }
 
@@ -217,6 +222,14 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
             config.benchmarkEnabled = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') {
                 config.benchmarkFile = argv[++i];
+            }
+            continue;
+        }
+
+        if (argument == "--dump-detections") {
+            config.detectionDumpEnabled = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                config.detectionDumpFile = argv[++i];
             }
             continue;
         }
@@ -324,7 +337,8 @@ public:
             return EXIT_FAILURE;
         }
 
-        if (!buildPipeline() || !installEventSources() || !startBenchmarkLogger()) {
+        if (!buildPipeline() || !installEventSources() || !startBenchmarkLogger() ||
+            !startDetectionDumpLogger()) {
             return EXIT_FAILURE;
         }
 
@@ -810,6 +824,7 @@ private:
     bool installProbes(GstElement *primaryInference, GstElement *tracker, GstElement *preOsdConverter, GstElement *osd, GstElement *outputConverter) {
         if (!addProbe(streamMuxSinkPad_, &DeepStreamApplication::onMuxSinkProbe)) return false;
         if (!addProbe(primaryInference, "sink", &DeepStreamApplication::onInferSinkProbe)) return false;
+        if (!addProbe(primaryInference, "src", &DeepStreamApplication::onInferSrcProbe)) return false;
         if (!addProbe(tracker, "sink", &DeepStreamApplication::onTrackerSinkProbe)) return false;
         if (!addProbe(preOsdConverter, "sink", &DeepStreamApplication::onPreOsdSinkProbe)) return false;
         if (!addProbe(osd, "sink", &DeepStreamApplication::onOsdBuffer)) return false;
@@ -917,6 +932,82 @@ private:
         }
         g_async_queue_unref(loggerQueue_);
         loggerQueue_ = nullptr;
+    }
+
+    bool startDetectionDumpLogger() {
+        if (!config_.detectionDumpEnabled) {
+            return true;
+        }
+
+        detectionQueue_ = g_async_queue_new();
+        if (detectionQueue_ == nullptr) {
+            g_printerr("Gagal membuat queue dump deteksi.\n");
+            return false;
+        }
+
+        try {
+            detectionThread_ = std::thread(&DeepStreamApplication::detectionDumpWorker, this);
+        } catch (const std::exception &error) {
+            g_printerr("Gagal memulai thread dump deteksi: %s\n", error.what());
+            g_async_queue_unref(detectionQueue_);
+            detectionQueue_ = nullptr;
+            return false;
+        }
+
+        g_print("\n=== DUMP DETEKSI AKTIF ===\n");
+        g_print("Menyimpan deteksi mentah PGIE ke: %s\n\n", config_.detectionDumpFile.c_str());
+        return true;
+    }
+
+    void detectionDumpWorker() {
+        std::ofstream dumpFile(config_.detectionDumpFile, std::ios::trunc);
+        if (!dumpFile.is_open()) {
+            g_printerr("Gagal membuka file dump deteksi: %s\n", config_.detectionDumpFile.c_str());
+        } else {
+            dumpFile << std::fixed << std::setprecision(3);
+        }
+
+        bool writeErrorReported = false;
+        guint recordsSinceFlush = 0;
+        while (true) {
+            gpointer item = g_async_queue_pop(detectionQueue_);
+            if (item == &detectionStopToken_) {
+                if (dumpFile.is_open()) {
+                    dumpFile.flush();
+                }
+                break;
+            }
+
+            std::unique_ptr<std::string> line(static_cast<std::string *>(item));
+            if (!dumpFile.is_open()) {
+                continue;
+            }
+
+            dumpFile << *line;
+            ++recordsSinceFlush;
+            if (recordsSinceFlush >= kBenchmarkFlushIntervalRecords) {
+                dumpFile.flush();
+                recordsSinceFlush = 0;
+            }
+            if (!dumpFile && !writeErrorReported) {
+                g_printerr("Gagal menulis dump deteksi ke: %s\n",
+                           config_.detectionDumpFile.c_str());
+                writeErrorReported = true;
+            }
+        }
+    }
+
+    void stopDetectionDumpLogger() {
+        if (detectionQueue_ == nullptr) {
+            return;
+        }
+
+        if (detectionThread_.joinable()) {
+            g_async_queue_push(detectionQueue_, &detectionStopToken_);
+            detectionThread_.join();
+        }
+        g_async_queue_unref(detectionQueue_);
+        detectionQueue_ = nullptr;
     }
 
     void resetMetrics() {
@@ -1099,6 +1190,61 @@ private:
         return GST_PAD_PROBE_OK;
     }
 
+    GstPadProbeReturn processInferSrcBuffer(GstPadProbeInfo *info) {
+        if (!config_.detectionDumpEnabled || detectionQueue_ == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
+
+        GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        if (buffer == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
+
+        NvDsBatchMeta *batchMeta = gst_buffer_get_nvds_batch_meta(buffer);
+        if (batchMeta == nullptr) {
+            return GST_PAD_PROBE_OK;
+        }
+
+        for (NvDsMetaList *frameNode = batchMeta->frame_meta_list; frameNode != nullptr;
+             frameNode = frameNode->next) {
+            auto *frameMeta = static_cast<NvDsFrameMeta *>(frameNode->data);
+            if (frameMeta == nullptr) {
+                continue;
+            }
+
+            std::ostringstream line;
+            line << std::fixed << std::setprecision(3);
+            line << "{\"frame_num\":" << frameMeta->frame_num << ",\"detections\":[";
+
+            bool first = true;
+            for (NvDsMetaList *objNode = frameMeta->obj_meta_list; objNode != nullptr;
+                 objNode = objNode->next) {
+                auto *objMeta = static_cast<NvDsObjectMeta *>(objNode->data);
+                if (objMeta == nullptr) {
+                    continue;
+                }
+                if (!first) {
+                    line << ",";
+                }
+                first = false;
+                line << "{\"class_id\":" << objMeta->class_id
+                     << ",\"left\":" << objMeta->rect_params.left
+                     << ",\"top\":" << objMeta->rect_params.top
+                     << ",\"width\":" << objMeta->rect_params.width
+                     << ",\"height\":" << objMeta->rect_params.height
+                     << ",\"confidence\":" << objMeta->confidence << "}";
+            }
+            line << "]}\n";
+
+            auto *payload = new (std::nothrow) std::string(line.str());
+            if (payload != nullptr) {
+                g_async_queue_push(detectionQueue_, payload);
+            }
+        }
+
+        return GST_PAD_PROBE_OK;
+    }
+
     void processDecodePad(GstPad *newPad) {
         if (fileDecodeSinkPad_ == nullptr || gst_pad_is_linked(fileDecodeSinkPad_)) {
             return;
@@ -1225,6 +1371,10 @@ private:
         return GST_PAD_PROBE_OK;
     }
 
+    static GstPadProbeReturn onInferSrcProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
+        return static_cast<DeepStreamApplication *>(userData)->processInferSrcBuffer(info);
+    }
+
     static GstPadProbeReturn onTrackerSinkProbe(GstPad *, GstPadProbeInfo *info, gpointer userData) {
         static_cast<DeepStreamApplication *>(userData)->recordTimestamp(GST_PAD_PROBE_INFO_BUFFER(info), &ComponentTimestamps::trackerIn);
         return GST_PAD_PROBE_OK;
@@ -1270,6 +1420,7 @@ private:
         }
 
         stopBenchmarkLogger();
+        stopDetectionDumpLogger();
 
         if (streamMux_ != nullptr && streamMuxSinkPad_ != nullptr) {
             gst_element_release_request_pad(streamMux_, streamMuxSinkPad_);
@@ -1321,6 +1472,9 @@ private:
     GAsyncQueue *loggerQueue_{nullptr};
     std::thread loggerThread_;
     char loggerStopToken_{0};
+    GAsyncQueue *detectionQueue_{nullptr};
+    std::thread detectionThread_;
+    char detectionStopToken_{0};
     std::unordered_map<GstClockTime, ComponentTimestamps> timestampsMap_;
     std::mutex timestampsMutex_;
     MetricsState metrics_;
