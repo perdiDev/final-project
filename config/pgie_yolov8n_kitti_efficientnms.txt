@@ -3,8 +3,9 @@ gpu-id=0
 net-scale-factor=0.0039215697906911373
 model-color-format=0
 
-# Engine hasil utils/build_efficientnms_engine.py
-onnx-file=../models/yolov8n_kitti.onnx
+# Engine hasil utils/trt_efficientnms/build_efficientnms_engine.py.
+# Sengaja engine-only: ONNX asli tidak memuat empat output EfficientNMS dan
+# tidak dapat dipakai nvinfer untuk membangun ulang engine ini secara setara.
 model-engine-file=../models/yolov8n_kitti_efficientnms.engine
 
 network-mode=2

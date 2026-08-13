@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a TensorRT engine with GPU-parallel EfficientNMS.
+"""Build a TensorRT engine with NVIDIA EfficientNMS on the GPU.
 
 The input ONNX file is never modified.  By default the generated engine is
 written next to it as ``<model>_efficientnms.engine``; this keeps an existing
@@ -193,30 +193,28 @@ def _make_decoded6_scores(
     class_ids = _slice(network, decoded, (0, 0, 5), 1)
 
     # EfficientNMS accepts scores per class, not a separate class-id tensor.
-    # Build a one-hot score matrix on GPU. Non-matching classes receive a value
-    # below any practical threshold and are therefore ignored by the plugin.
-    score_columns = []
-    constant_shape = (dimensions[0], dimensions[1], 1)
-    for class_id in range(num_classes):
-        class_constant = network.add_constant(
-            constant_shape,
-            np.full(constant_shape, float(class_id), dtype=np.float32),
-        )
-        negative_score = network.add_constant(
-            constant_shape,
-            np.full(constant_shape, -10000.0, dtype=np.float32),
-        )
-        equal = network.add_elementwise(
-            class_ids, class_constant.get_output(0), trt.ElementWiseOperation.EQUAL
-        )
-        selected = network.add_select(
-            equal.get_output(0), scores_one, negative_score.get_output(0)
-        )
-        score_columns.append(selected.get_output(0))
-
-    concatenate = network.add_concatenation(score_columns)
-    concatenate.axis = 2
-    return boxes, concatenate.get_output(0)
+    # TensorRT broadcasting expands [B,N,1] against [1,1,C], so this needs only
+    # one comparison and one select instead of four layers for every class.
+    class_values = network.add_constant(
+        (1, 1, num_classes),
+        np.arange(num_classes, dtype=np.float32).reshape(1, 1, num_classes),
+    )
+    negative_score = network.add_constant(
+        (1, 1, 1), np.asarray([[[-10000.0]]], dtype=np.float32)
+    )
+    if class_values is None or negative_score is None:
+        raise RuntimeError("TensorRT gagal membuat konstanta score matrix decoded6.")
+    equal = network.add_elementwise(
+        class_ids, class_values.get_output(0), trt.ElementWiseOperation.EQUAL
+    )
+    if equal is None:
+        raise RuntimeError("TensorRT gagal membandingkan class-id decoded6.")
+    selected = network.add_select(
+        equal.get_output(0), scores_one, negative_score.get_output(0)
+    )
+    if selected is None:
+        raise RuntimeError("TensorRT gagal membentuk score matrix decoded6.")
+    return boxes, selected.get_output(0)
 
 
 def _create_plugin(
@@ -266,6 +264,10 @@ def _create_plugin(
     if "class_agnostic" in available:
         fields.append(
             field("class_agnostic", int(class_agnostic), trt.PluginFieldType.INT32)
+        )
+    elif class_agnostic:
+        raise RuntimeError(
+            "Plugin TensorRT ini tidak mendukung --class-agnostic."
         )
 
     plugin = creator.create_plugin(
@@ -479,7 +481,7 @@ def _default_output(model: Path) -> Path:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Tambahkan EfficientNMS_TRT GPU-parallel ke model ONNX tanpa mengubah baseline."
+        description="Tambahkan EfficientNMS_TRT GPU ke model ONNX tanpa mengubah baseline."
     )
     parser.add_argument("model", type=Path, help="Path model ONNX sumber.")
     parser.add_argument(
@@ -501,7 +503,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--input-format",
         choices=("auto", "full_scores", "decoded6", "boxes_scores"),
         default="auto",
-        help="Format input ke NMS; auto mendahulukan tensor head YOLO [B,N,4+C].",
+        help=(
+            "Format input NMS; auto/full_scores meminimalkan graph tambahan, "
+            "sedangkan decoded6 paling dekat dengan semantik max-score baseline."
+        ),
     )
     parser.add_argument(
         "--output-name",
@@ -520,9 +525,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--box-coding",
         type=int,
-        choices=(0, 1),
+        choices=(0,),
         default=0,
-        help="0=corner/xyxy (default), 1=center-size.",
+        help="Format corner/xyxy; satu-satunya format yang didukung parser DeepStream.",
     )
     parser.add_argument(
         "--class-agnostic",
@@ -557,8 +562,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--batch harus lebih besar dari nol.")
     if args.max_output_boxes <= 0:
         parser.error("--max-output-boxes harus lebih besar dari nol.")
-    if not 0.0 <= args.score_threshold:
-        parser.error("--score-threshold tidak boleh negatif.")
+    if not 0.0 <= args.score_threshold <= 1.0:
+        parser.error("--score-threshold harus berada di antara 0 dan 1.")
+    if args.height is not None and args.height <= 0:
+        parser.error("--height harus lebih besar dari nol.")
+    if args.width is not None and args.width <= 0:
+        parser.error("--width harus lebih besar dari nol.")
     if not 0.0 <= args.iou_threshold <= 1.0:
         parser.error("--iou-threshold harus berada di antara 0 dan 1.")
     args.output = args.output or _default_output(args.model)

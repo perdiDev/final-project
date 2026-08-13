@@ -13,7 +13,7 @@ gie-unique-id=1
 process-mode=1
 network-type=0
 maintain-aspect-ratio=1
-cluster-mode=4
+cluster-mode=2
 batch-size=1
 
 # --- Custom parser untuk output YOLO ---
