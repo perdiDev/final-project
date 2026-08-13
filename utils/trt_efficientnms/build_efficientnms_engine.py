@@ -447,6 +447,7 @@ def _build(args: argparse.Namespace) -> int:
         network.mark_output(output)
 
     config = builder.create_builder_config()
+    config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED 
     workspace_bytes = int(args.workspace_gib * (1024**3))
     if workspace_bytes <= 0:
         raise ValueError("--workspace-gib harus lebih besar dari nol.")
