@@ -1,0 +1,20 @@
+# accuracy_reference.csv
+# Sumber: docs/05_accuracy_results.md §5.1 (Tabel Utama), ditranskrip 2026-08-15.
+# Diukur dengan best_model.val(data=yaml_path) (Ultralytics) di Kaggle (GPU Tesla T4),
+# val set identik untuk keempat model dasar: 1010 gambar, 4722 instance.
+# Bobot .pt (FP32) dipakai sebagai proxy akurasi deployment FP16 — lihat caveat
+# docs/03_deployment_pipeline.md §3.4.
+#
+# Baris *_efficientnms memakai angka model basenya (params/gflops/map/precision/recall
+# sama persis dengan model non-efficientnms-nya): EfficientNMS_TRT mengganti *lokasi*
+# eksekusi NMS (plugin GPU vs parser CPU/host), bukan kandidat deteksi atau threshold
+# score/IoU (lihat utils/trt_efficientnms/README.md). Ini asumsi, ditandai lewat kolom
+# is_efficientnms_proxy=true — perlu diverifikasi ulang dengan dump deteksi as-deployed
+# dari kedua jalur sebelum dianggap final di BAB IV (lihat skripsi/log/log-perubahan.md).
+model_config,display_name,params,gflops,map50,map50_95,precision,recall,is_efficientnms_proxy
+yolov8n_kitti,YOLOv8n,3006233,8.1,0.9767,0.8397,0.9696,0.9344,false
+yolov9t_kitti,YOLOv9t,1971369,7.6,0.9670,0.8120,0.9643,0.9259,false
+yolov10n_kitti,YOLOv10n,2265753,6.5,0.9704,0.8370,0.9689,0.9189,false
+yolov26n_kitti,YOLO26n,2375421,5.2,0.9706,0.8233,0.9508,0.9297,false
+yolov8n_kitti_efficientnms,YOLOv8n+EfficientNMS,3006233,8.1,0.9767,0.8397,0.9696,0.9344,true
+yolov9t_kitti_efficientnms,YOLOv9t+EfficientNMS,1971369,7.6,0.9670,0.8120,0.9643,0.9259,true
