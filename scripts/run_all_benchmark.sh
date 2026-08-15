@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Automasi 18 Skenario Benchmark (6 Model x 3 Tracker)
+# Automasi 12 Skenario Benchmark (6 Model x 2 Tracker)
 # ==============================================================================
 set -e
 
@@ -35,16 +35,15 @@ MODELS=(
     "yolov9t_kitti_efficientnms"
 )
 
-# 2. Definisikan 3 Tracker
+# 2. Definisikan 2 Tracker
 TRACKERS=(
     "nvdcf"
     "nvsort"
-    "nvdcf_perf"
 )
 
 echo "======================================================================"
 echo "MEMULAI BATCH BENCHMARK TUGAS AKHIR"
-echo "Total Skenario: $((${#MODELS[@]} * ${#TRACKERS[@]})) (6 Model x 3 Tracker)"
+echo "Total Skenario: $((${#MODELS[@]} * ${#TRACKERS[@]})) (6 Model x 2 Tracker)"
 echo "Input Video: $VIDEO_INPUT"
 echo "======================================================================"
 
