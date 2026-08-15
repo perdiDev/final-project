@@ -37,6 +37,7 @@ BENCH_ROOT="data/benchmark"
 TEGRA_INTERVAL_MS=1000
 
 # ---- Default (mengikuti protokol benchmark: sumber input konsisten & terkontrol) ----
+# Real-time target: ≥30 FPS (ADAS safety-critical standard; ZED camera HD capability)
 MODEL_NAME=""
 CONFIG_FILE=""
 TRACKER=""

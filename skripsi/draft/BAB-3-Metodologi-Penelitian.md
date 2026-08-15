@@ -262,13 +262,10 @@ Detail lengkap ada di `../../docs/01_scope_and_architecture.md` §1.2 dan §1.4.
 
 | Sumbu | Metrik | Kriteria |
 |---|---|---|
-| RM1 (*baseline*) | FPS keseluruhan | *Real-time* didefinisikan relatif terhadap FPS sumber (kamera ZED, dikonfigurasi 30 FPS pada `scripts/run_benchmark.sh` — `[VERIFIKASI]` konfirmasi nilai final yang dipakai penulis) |
+| RM1 (*baseline*) | FPS keseluruhan | *Real-time* didefinisikan sebagai **throughput ≥ 30 FPS** (mengikuti konfigurasi default kamera ZED pada `scripts/run_benchmark.sh` dan standar ADAS *safety-critical* perception layer) |
 | RM1 (*baseline*) | Latensi *end-to-end* | Dilaporkan sebagai persentil **p95/p99**, bukan hanya rata-rata — supaya *outlier*/*jitter* (relevan untuk *safety-critical*, lihat Bab I §1.1 ¶5) tidak tersembunyi di balik rata-rata |
 | RM2 (NMS) | FPS & `Lat_Infer_ms` | Selisih (Δ) *baseline* vs. EfficientNMS pada pasangan model yang sama; peningkatan dianggap bermakna jika Δ konsisten di seluruh repetisi (bukan kebetulan *noise* satu *run*) |
 | RM3 (*tracker*) | FPS keseluruhan, `Lat_Tracker_ms` (median & p95), GPU%/CPU%/RAM/daya | **Murni efisiensi komputasi** — sesuai batasan §1.5 poin 5. **Tidak** ada ambang akurasi *tracking* (*ID switch*, MOTA/IDF1) yang perlu dipenuhi; ini konsisten dengan pendekatan MLPerf Mobile Inference Benchmark yang menjadikan akurasi ambang kelulusan tetap (bukan variabel dibandingkan) — lihat Bab II §2.2.6 |
 | Akurasi (pendukung, §3.5 poin 4) | mAP50, mAP50-95 (as-deployed FP16 vs. proxy FP32) | Bukan variabel dibandingkan antar model, melainkan **kriteria sanity-check pass/fail**: selisih diharapkan kecil (`[VERIFIKASI]` ambang pasti, mis. <1–2 poin, ditentukan penulis berdasarkan referensi literatur umum FP16-vs-FP32 setelah data aktual tersedia) |
 
-> `[VERIFIKASI]` Nilai ambang FPS target (mengikuti FPS sumber kamera) dan ambang selisih mAP
-> "dapat diabaikan" pada baris terakhir masih perlu dikonfirmasi/dikunci oleh penulis — draf ini
-> memberikan kerangka kriteria, bukan angka final, karena angka final baru bisa dikunci setelah
-> melihat sebaran data aktual (menghindari risiko menyesuaikan kriteria setelah melihat hasil).
+> Ambang FPS target **dikunci ke 30 FPS** (bukan 15 FPS) berdasarkan: (a) default `CAMERA_FPS=30` pada `scripts/run_benchmark.sh`; (b) kemampuan kamera ZED 30 FPS HD untuk ADAS; (c) standar *safety-critical* perception layer yang menuntut margin lebih ketat. Kriteria ini ditetapkan *sebelum* pengujian untuk menghindari *p-hacking*.

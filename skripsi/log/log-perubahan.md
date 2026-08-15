@@ -10,6 +10,15 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-15 07:45 WITA — kunci definisi real-time target ke **30 FPS** (bukan 15 FPS)
+
+- **BAB-3-Metodologi-Penelitian.md** §3.6: ubah kriteria RM1 FPS dari "relatif terhadap FPS sumber (30 FPS — [VERIFIKASI])" → **"throughput ≥ 30 FPS"**; hapus tag `[VERIFIKASI]`, tambah justifikasi (ZED 30 FPS HD, standar ADAS safety-critical, default benchmark script).
+- **docs/07_tradeoff_analysis.md** §7.5: ganti "15 FPS berdasarkan config/deepstream_app.txt" → **"≥ 30 FPS mengikuti default kamera ZED & protokol benchmark"**.
+- **docs/04_benchmark_protocol.md** §4.1: tambah baris "Target real-time: ≥ 30 FPS" ke tabel variabel terkontrol.
+- **scripts/run_benchmark.sh**: tambah komentar di default `CAMERA_FPS=30` menjelaskan alasan (ADAS safety-critical, ZED HD capability).
+- Alasan: 30 FPS lebih ketat & defendable untuk ADAS perception layer; ZED camera mendukung 30 FPS HD; benchmark script sudah default 30 FPS; klaim 30 FPS implikasikan 15 FPS dengan margin; menetapkan *sebelum* eksperimen menghindari p-hacking.
+- Catatan: `config/deepstream_app.txt` tetap punya `camera-fps-n=15` (legacy/fallback), tapi **bukan** acuan utama penelitian ini.
+
 ## 2026-08-15 07:15 WITA — standarkan rumusan masalah #3 ke NvDCF vs NvSORT (hapus NvDCF_perf)
 
 - **BAB-1-Pendahuluan.md**: §1.2 poin 3 (rumusan masalah), §1.3 poin 3 (tujuan), §1.5 poin 2 & catatan VERIFIKASI — ganti "NvDCF vs NvSORT vs NvDCF_perf" → "NvDCF vs NvSORT"; update jumlah skenario 18→12 (6 model × 2 tracker).

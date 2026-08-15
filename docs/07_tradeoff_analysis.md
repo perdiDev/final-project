@@ -83,8 +83,8 @@ Setelah grafik trade-off selesai, susun kesimpulan Bab 5 dalam bentuk seperti:
 
 1. **Jika prioritas akurasi maksimum** (misal untuk kasus deteksi jarak jauh/kritikal
    keselamatan) → rekomendasikan model dengan mAP tertinggi meski FPS sedikit lebih rendah,
-   *dengan syarat FPS tersebut masih memenuhi kebutuhan real-time* (biasanya ≥ frame rate
-   kamera, dalam kasus ini 15 FPS berdasarkan `config/deepstream_app.txt`).
+   *dengan syarat FPS tersebut masih memenuhi kebutuhan real-time* (≥ 30 FPS, mengikuti
+   konfigurasi default kamera ZED pada protokol benchmark dan standar ADAS *safety-critical*).
 2. **Jika prioritas efisiensi daya/computolah (untuk deployment jangka panjang, battery-
    constrained, atau berbagi compute dengan modul ADAS lain)** → rekomendasikan model dengan
    GFLOPs/power terendah yang akurasinya masih dalam toleransi yang dapat diterima.

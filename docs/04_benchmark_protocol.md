@@ -22,6 +22,7 @@ pengujian), variabel berikut dijaga tetap sama di setiap run:
 | Tracker config | `config/tracker_nvdcf.yml` jika tersedia, atau profil tracker pertama yang ditemukan | Untuk eksperimen pengaruh tracker, gunakan `--tracker <path-yaml>` sesuai file `config/tracker_*.yml`/`*.yaml` yang tersedia |
 | Jetson power mode | Tetap (catat dengan `nvpmodel -q`, idealnya `jetson_clocks` aktif) | Perubahan power mode di tengah eksperimen membuat FPS/daya antar model tidak sebanding |
 | Durasi/panjang klip | Sama untuk semua model (gunakan `--duration <detik>`) | Supaya jumlah frame yang diukur & window statistik konsisten |
+| Target *real-time* | **≥ 30 FPS** (throughput pipeline) | Standar ADAS *safety-critical*; ZED camera HD 30 FPS; default `run_benchmark.sh` |
 
 **Kalau ingin mengganti satu variabel** (misal: ingin tahu pengaruh live ZED feed, atau
 pengaruh output RTSP vs file), lakukan itu sebagai eksperimen terpisah yang dinyatakan
