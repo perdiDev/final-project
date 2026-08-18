@@ -64,7 +64,13 @@ def discover_runs(bench_root: Path) -> List[RunInfo]:
         try:
             fields = parse_run_info(run_info_path)
             combined_name = fields["model"]
-            tracker = fields["tracker"]
+            tracker_raw = fields["tracker"]
+            # Tracker di run_info.txt bisa berupa path (mis. config/tracker_nvdcf.yml).
+            # Kita ambil basename-nya lalu bersihkan prefix/suffix agar konsisten
+            # dengan field model (model_config + "_" + tracker).
+            tracker = Path(tracker_raw).stem
+            if tracker.startswith("tracker_"):
+                tracker = tracker[len("tracker_") :]
         except (OSError, KeyError) as exc:
             print(f"[WARN] Lewati {run_dir}: gagal baca run_info.txt ({exc})")
             continue

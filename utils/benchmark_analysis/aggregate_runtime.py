@@ -134,7 +134,7 @@ def plot_fps_boxplot(per_run: pd.DataFrame, group_col: str, out_path: Path, titl
     data = [per_run.loc[per_run[group_col] == g, "throughput_fps"].dropna() for g in groups]
 
     fig, ax = plt.subplots(figsize=(max(6, len(groups) * 1.2), 5))
-    box = ax.boxplot(data, tick_labels=groups, patch_artist=True)
+    box = ax.boxplot(data, labels=groups, patch_artist=True)
     for i, patch in enumerate(box["boxes"]):
         patch.set_facecolor(CATEGORICAL_COLORS[i % len(CATEGORICAL_COLORS)])
         patch.set_alpha(0.7)

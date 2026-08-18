@@ -10,6 +10,15 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-18 14:45 WITA — Eksekusi perdana `aggregate_runtime.py` dengan data benchmark awal
+
+- **skripsi/eksperimen/runtime_summary.csv**, **runtime_per_run.csv**: Berhasil menjalanakan script agregasi dan menghasilkan data awal untuk BAB IV.
+- **skripsi/eksperimen/plots/**: Menghasilkan grafik boxplot FPS per model dan per tracker.
+- **utils/benchmark_analysis/common.py**: Memperbaiki logika `discover_runs` agar field `tracker` yang berupa path file (output dari `run_benchmark.sh`) dapat diproses dan dinormalisasi menjadi nama pendek (mis. `nvdcf`).
+- **utils/benchmark_analysis/aggregate_runtime.py**: Memperbaiki parameter `labels` pada fungsi `ax.boxplot` untuk kompatibilitas dengan versi Matplotlib yang terpasang di sistem.
+- **Lingkungan Python**: Downgrade `numpy` ke versi 1.26.4 untuk memperbaiki konflik dengan Matplotlib sistem yang belum mendukung NumPy 2.x.
+- **Temuan Teknis**: Data awal pada Jetson Orin Nano menunjukkan NvSORT memiliki latensi tracker yang sangat rendah (~0.38ms) dibandingkan NvDCF (~12.17ms), serta penggunaan GPU yang lebih efisien (43% vs 88%), mengonfirmasi trade-off yang dibahas di BAB II.
+
 ## 2026-08-15 14:13 WITA — regenerasi Skripsi-Gabungan-BAB-I-III.docx untuk diajukan ke dosen pembimbing
 
 - **draft/_build/BAB-1.clean.md**, **BAB-2.clean.md**, **BAB-3.clean.md**: regenerasi total dari isi terbaru `draft/BAB-1..3-*.md` (sebelumnya belum disinkronkan sejak build 2026-08-14 13:12, sehingga masih memuat NvDCF_perf, sitasi Wu dkk. yang sudah dihapus, dan placeholder spesifikasi Jetson Orin Nano yang sudah terisi). Semua anotasi kerja (blockquote `> ...`, tag `[VERIFIKASI]`, catatan proses semacam "dikoreksi 2026-08-14"/"sesi ini", serta rujukan path internal `../../docs/...`) dihapus dari badan bab agar terbaca sebagai naskah akademis yang tuntas; substansi klaim yang masih valid dipertahankan dan dirapikan ke kalimat baku, termasuk perbaikan kecil: rujukan silang "§1.4 Batasan Masalah" di Bab II §2.2.7 dikoreksi menjadi "§1.5" (Batasan Masalah ada di 1.5, bukan 1.4).
