@@ -138,9 +138,9 @@ berikut:
 5. Evaluasi algoritma *tracking* dibatasi pada aspek **efisiensi komputasi** (FPS,
    latensi per-komponen, utilisasi *resource*), dan **tidak mencakup evaluasi kualitas
    atau akurasi *tracking*** (mis. jumlah *ID switch*, MOTA/IDF1). Pembatasan ini konsisten
-   dengan rumusan masalah #3 yang memang dirumuskan secara eksplisit sebagai pertanyaan
-   "efisiensi komputasi" (§1.2), sejalan dengan sumbu akurasi-vs-komputasi yang sudah
-   melekat pada desain profil NvDCF/NvDCF_perf/NvSORT itu sendiri menurut dokumentasi resmi
+   dengan rumusan masalah ketiga yang memang dirumuskan secara eksplisit sebagai
+   pertanyaan efisiensi komputasi (§1.2), sejalan dengan sumbu akurasi-vs-komputasi yang
+   sudah melekat pada desain profil NvDCF dan NvSORT itu sendiri menurut dokumentasi resmi
    NVIDIA (lihat Bab II §2.2.6) — bukan sesuatu yang perlu diukur ulang penelitian ini agar
    pertanyaannya valid dijawab. Ketidaktersediaan dataset *tracking* berlabel (video
    berurutan dengan ID objek konsisten, mis. KITTI Tracking) pada ruang lingkup penelitian

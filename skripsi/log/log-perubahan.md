@@ -10,6 +10,15 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-15 14:13 WITA — regenerasi Skripsi-Gabungan-BAB-I-III.docx untuk diajukan ke dosen pembimbing
+
+- **draft/_build/BAB-1.clean.md**, **BAB-2.clean.md**, **BAB-3.clean.md**: regenerasi total dari isi terbaru `draft/BAB-1..3-*.md` (sebelumnya belum disinkronkan sejak build 2026-08-14 13:12, sehingga masih memuat NvDCF_perf, sitasi Wu dkk. yang sudah dihapus, dan placeholder spesifikasi Jetson Orin Nano yang sudah terisi). Semua anotasi kerja (blockquote `> ...`, tag `[VERIFIKASI]`, catatan proses semacam "dikoreksi 2026-08-14"/"sesi ini", serta rujukan path internal `../../docs/...`) dihapus dari badan bab agar terbaca sebagai naskah akademis yang tuntas; substansi klaim yang masih valid dipertahankan dan dirapikan ke kalimat baku, termasuk perbaikan kecil: rujukan silang "§1.4 Batasan Masalah" di Bab II §2.2.7 dikoreksi menjadi "§1.5" (Batasan Masalah ada di 1.5, bukan 1.4).
+- **draft/_build/BAB-3.clean.md** §3.2.1: sel spesifikasi *compute board* yang sebelumnya kosong (menunggu keputusan sesi 2026-08-14) diisi ringkas mengacu ke tabel spesifikasi Jetson Orin Nano 4GB yang sudah lengkap di Bab II §2.2.7 (bukan data baru — hanya konsistensi lintas-bab).
+- **draft/_build/BAB-3.clean.md** §3.4: diagram mermaid pipeline diganti representasi naratif (daftar bernomor) agar tampil rapi di Word; jumlah tracker disesuaikan dari 3 (versi lama) menjadi 2 (NvDCF/NvSORT, sesuai keputusan 07:15 WITA).
+- **draft/_build/generate_docx.py**: perbarui subjudul halaman judul ("dokumen kerja, belum final" → "draf untuk diperiksa dosen pembimbing"); rombak daftar `VERIFICATION_NOTES` (lampiran "Catatan Verifikasi dan Tindak Lanjut Penulis") supaya sinkron dengan status terkini: hapus butir yang sudah selesai (spesifikasi Jetson Orin Nano, ambang FPS real-time, gaya sitasi NVIDIA), tambah butir baru (status verifikasi akurasi as-deployed FP16 baru sebatas infrastruktur kode, verifikasi independen varian 4GB via device-tree); tambah kalimat di paragraf pembuka lampiran yang menjelaskan Bab IV & V belum disertakan karena menunggu data pengujian aktual.
+- **draft/Skripsi-Gabungan-BAB-I-III.docx**: dibangun ulang dari clean.md terbaru via `generate_docx.py` (dijalankan dengan `.venv-docx`); diverifikasi terprogram bahwa tag `[VERIFIKASI]` dan `NvDCF_perf` sudah nihil di seluruh isi dokumen, dan sitasi Wu dkk. hanya tersisa di lampiran catatan verifikasi (bukan di badan Bab I–III).
+- Alasan: pengguna ingin mengajukan hasil sementara (Bab I–III) ke dosen pembimbing; dokumen gabungan lama (build 13:12 tanggal 14) sudah kedaluwarsa terhadap draf per-bab yang diperbarui pada 15 Agustus, dan masih memuat rincian kerja internal yang tidak pantas tampil di naskah akademis yang diajukan.
+
 ## 2026-08-15 07:45 WITA — kunci definisi real-time target ke **30 FPS** (bukan 15 FPS)
 
 - **BAB-3-Metodologi-Penelitian.md** §3.6: ubah kriteria RM1 FPS dari "relatif terhadap FPS sumber (30 FPS — [VERIFIKASI])" → **"throughput ≥ 30 FPS"**; hapus tag `[VERIFIKASI]`, tambah justifikasi (ZED 30 FPS HD, standar ADAS safety-critical, default benchmark script).
