@@ -10,6 +10,144 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-19 15:10 WITA — Isi penuh BAB IV (Kesimpulan dan Saran)
+
+- **skripsi/draft/BAB-4-Kesimpulan-dan-Saran.md**: skeleton TODO diisi penuh. §4.1 Kesimpulan
+  menjawab ketiga rumusan masalah/tujuan penelitian (`BAB-1-Pendahuluan.md` §1.2–§1.3) satu per
+  satu berdasarkan hasil `BAB-3-Hasil-dan-Pembahasan.md` (60 *run* — 6 model × 2 *tracker* × 5
+  repetisi): (1) RM1 — keempat model *baseline* memenuhi ambang *real-time* 30 FPS dengan margin
+  besar, YOLOv9t teridentifikasi sebagai *outlier* latensi akibat *backpressure* `Lat_PreMux_ms`;
+  (2) RM2 — EfficientNMS tidak terbukti meningkatkan efisiensi *pipeline* (temuan negatif pada
+  YOLOv9t, tidak signifikan pada YOLOv8n), model NMS-*free* juga tidak otomatis menjamin
+  *throughput* tertinggi; (3) RM3 — NvSORT 10×–62× lebih murah dari NvDCF di level komponen
+  (universal, tidak bergantung model), tetapi dampaknya ke *throughput* akhir kondisional (hanya
+  signifikan besar pada YOLOv9t yang *headroom*-nya sudah tipis). Ditutup catatan bahwa
+  kesimpulan terkait *trade-off* akurasi masih bersyarat pada *proxy* FP32 karena verifikasi
+  akurasi *as-deployed* FP16 (§3.4.2 BAB III) belum dieksekusi — sengaja tidak diklaim pasti
+  supaya tidak melebih-lebihkan kepastian hasil. §4.2 Saran berisi 8 poin diurutkan usaha
+  kecil→besar: (1) verifikasi akurasi FP16 *as-deployed* (prioritas), (2) kanal pengukuran suhu
+  SoC, (3) eksplorasi optimasi lanjutan di luar *plugin* EfficientNMS (mengutip urutan
+  rekomendasi `../../utils/trt_efficientnms/README.md` §"Batas optimasi dan alternatif" —
+  *score-threshold*, `max-output-boxes`, profil `trtexec`/Nsight Systems, model NMS-*free*,
+  *custom plugin fused*), (4) eksperimen presisi INT8, (5) skenario pengujian tambahan
+  (kepadatan lalu lintas/cahaya/cuaca/durasi klip), (6) pengukuran kualitas *tracking*
+  (ID *switch*/MOTA/IDF1) di luar *scope* penelitian ini, (7) pengujian *deployment*
+  multi-kamera/multi-model pada SKU 4GB/8GB, (8) pemanfaatan *depth-sensing* stereo kamera ZED
+  untuk estimasi jarak (dari `../../docs/08_limitations_future_work.md` §8.1–8.2, belum
+  dimanfaatkan pada penelitian ini). Tidak ada angka baru yang dikarang — seluruh klaim numerik
+  merujuk balik ke tabel/bagian BAB III yang sudah ada.
+
+---
+
+## 2026-08-19 14:20 WITA — Restrukturisasi seluruh BAB II–V mengikuti format skripsi Unhas (BAB II wajib Metode Penelitian)
+
+Atas instruksi eksplisit user (paste arahan/rubrik format skripsi Departemen Teknik Informatika
+Unhas), seluruh struktur bab draf skripsi direstrukturisasi. Perubahan struktural: BAB II lama
+("Tinjauan Pustaka") dan BAB III lama ("Metodologi Penelitian") digabung dan digeser menjadi
+satu BAB II baru ("Metode Penelitian"); BAB IV lama ("Hasil dan Pembahasan") bergeser menjadi
+BAB III baru; BAB V lama ("Kesimpulan dan Saran") bergeser menjadi BAB IV baru. Total bab
+tetap 4 (I–IV), bukan 5 seperti draf sebelumnya.
+
+**Alasan**: format skripsi Departemen Teknik Informatika Unhas mewajibkan BAB II berupa Metode
+Penelitian (bukan Tinjauan Pustaka). *State of the art* ("Penelitian Terkait") harus diringkas
+dan diintegrasikan ke BAB I (Latar Belakang) untuk memperkuat argumen *research gap*; Landasan
+Teori tidak boleh berdiri sendiri sebagai bab, melainkan dipadatkan sebagai justifikasi ilmiah
+langsung di dalam sub-bab metode (instrumen, perancangan sistem) di BAB II.
+
+**File yang diubah:**
+
+- **skripsi/draft/BAB-1-Pendahuluan.md**: §1.1 Latar Belakang ditambah 3 paragraf baru yang
+  meringkas *state of the art* dari draf `BAB-2-Tinjauan-Pustaka.md` §2.1.1–§2.1.2 (versi lama,
+  kini dihapus) — klaster deteksi objek YOLO pada perangkat *edge* (Ayachi, Dhatrika, Chaman,
+  Guerrouj, Bouazizi, Xie, Tsai & Hsieh) dan klaster akselerasi NMS (Chen, Oro, Yang) — masing
+  ditutup dengan kalimat yang mengaitkan celah literatur ke rumusan masalah #1/#2. Klaster
+  efisiensi *real-time*/penjadwalan (§2.1.3 lama) dan konteks umum ADAS (§2.1.4 lama) tidak
+  diduplikasi karena sitasinya (Choi, Nigade, Zhang, Ruiz-Barroso, Suder, Seyfipoor, Shah,
+  Neumann, Costa) sudah ada di §1.1 sejak draf pertama. Rujukan silang "Bab II §2.2.6" (soal
+  justifikasi *tracker*) diperbarui jadi "Bab II §2.5.3" mengikuti struktur BAB II baru.
+  Ditambah catatan status di header.
+- **skripsi/draft/BAB-2-Metode-Penelitian.md** (BARU, menggantikan `BAB-2-Tinjauan-Pustaka.md`
+  dan `BAB-3-Metodologi-Penelitian.md` yang keduanya dihapus): §2.1 Tempat dan Waktu Penelitian
+  (baru, ditandai `[VERIFIKASI]` untuk nama laboratorium spesifik — belum tercatat di dokumen
+  proyek manapun); §2.2 Benda Uji dan Alat (dari §3.2 lama, sub-nomor 2.2.1–2.2.6 dipertahankan
+  sama seperti sub-nomor lama 3.2.1–3.2.6 untuk minim disrupsi); §2.3 Tahapan Penelitian (dari
+  §3.1 + §3.3 lama, digabung — deskripsi jenis penelitian eksperimental kuantitatif jadi
+  paragraf pembuka); §2.4 Teknik Pengumpulan Data (baru, disintesis dari §2.2.8 lama "Metrik
+  Evaluasi" + mekanisme pad probe/tegrastats yang sebelumnya tersebar di §3.4 lama); §2.5
+  Perancangan dan Implementasi Sistem (dari §3.4 lama, digabung dengan landasan teori DeepStream
+  SDK/NMS/tracker dari §2.2.2/§2.2.5/§2.2.6 lama — uraian NvDCF/NvSORT beserta sitasi NVIDIA dan
+  MLPerf Mobile dipindah utuh ke §2.5.3); §2.6 Skenario Pengujian dan Kriteria Evaluasi (dari
+  §3.5 + §3.6 lama). Seluruh angka/tabel teknis (spesifikasi Jetson Orin Nano, tabel model,
+  tabel tracker) disalin apa adanya dari draf lama — tidak ada angka baru yang dikarang.
+- **skripsi/draft/BAB-3-Hasil-dan-Pembahasan.md** (BARU, menggantikan
+  `BAB-4-Hasil-dan-Pembahasan.md` yang dihapus — isi 60-run tetap sama, hanya restrukturisasi):
+  §3.1 Baseline (RM1) dipecah jadi 3.1.1 Throughput (termasuk tabel kepatuhan real-time 60 run,
+  dulu §4.4 terpisah), 3.1.2 Latensi E2E (p95/p99), 3.1.3 Latensi per-komponen; §3.2 NMS (RM2)
+  dipecah jadi 3.2.1 dampak latensi inferensi, 3.2.2 dampak throughput (+ pembahasan hasil
+  negatif dari §4.5.1 lama), 3.2.3 pembahasan model NMS-free (baru, mensintesis YOLOv10n/YOLO26n
+  dari sudut RM2); §3.3 Tracking (RM3) dipecah jadi 3.3.1 latensi tracker, 3.3.2 dampak FPS (+
+  pembahasan dari §4.5.2 lama), 3.3.3 penggunaan sumber daya; §3.4 Verifikasi akurasi FP16
+  (gabungan §4.2.1+§4.2.2 lama, masih TODO — belum dieksekusi); §3.5 Pembahasan akhir (3.5.1
+  trade-off dari §4.5.3 lama + perbandingan penelitian terkait dari §4.6 lama yang sebelumnya
+  TODO kosong, kini diisi paragraf singkat; 3.5.2 keterbatasan dari §4.5.4 lama ditambah dua
+  subbagian BARU yang diminta struktur Unhas — keterbatasan memori 4GB modul Jetson Orin Nano
+  (dihitung dari RAM usage 1265–1449 MB di Tabel 3.3.3, bukan angka baru) dan pengaruh thermal
+  throttling (ditulis jujur: dimitigasi prosedural via cooldown 60 detik, TAPI tidak diukur
+  langsung karena tegrastats parser saat ini tidak mengekstrak suhu — bukan diklaim terverifikasi
+  padahal tidak ada datanya).
+- **skripsi/draft/BAB-4-Kesimpulan-dan-Saran.md** (BARU, menggantikan
+  `BAB-5-Kesimpulan-dan-Saran.md` yang dihapus): isi tidak berubah (masih skeleton/TODO), hanya
+  judul "BAB V" → "BAB IV" dan rujukan internal "BAB IV" → "BAB III" diperbarui.
+- **skripsi/eksperimen/README.md**: rujukan "BAB IV (`BAB-4-Hasil-dan-Pembahasan.md`)" →
+  "BAB III (`BAB-3-Hasil-dan-Pembahasan.md`)".
+- **skripsi/journal/daftar-referensi.md**: catatan di bagian atas tabel diperbarui untuk
+  menjelaskan pemindahan lokasi (BAB-2-Tinjauan-Pustaka.md dihapus) — kolom Relevansi per-baris
+  **tidak** diubah satu per satu (masih menyebut nomor lama "BAB II §2.1.x"/"§2.2.x") karena
+  disertai catatan penjelasan pemetaan di atas tabel, demi menghindari risiko salah pemetaan
+  nomor per baris.
+
+**Belum dilakukan (di luar scope sesi ini)**: regenerasi `draft/_build/*.clean.md` dan
+`draft/Skripsi-Gabungan-BAB-I-III.docx` — keduanya kini merepresentasikan struktur BAB I–III
+**lama** dan sudah usang setelah restrukturisasi ini; perlu dibangun ulang dari draf BAB I–III
+baru sebelum diajukan ke dosen pembimbing lagi.
+
+---
+
+## 2026-08-19 13:50 WITA — Isi penuh BAB IV berdasarkan eksekusi 60 run (6 model × 2 tracker × 5 repetisi)
+
+- **skripsi/draft/BAB-4-Hasil-dan-Pembahasan.md**: ditulis penuh (sebelumnya skeleton berisi
+  TODO semua bagian). Sumber data: `skripsi/eksperimen/runtime_summary.csv`,
+  `runtime_per_run.csv`, `tradeoff_summary.csv`, `plots/*.png` (hasil `scripts/run_all_benchmark.sh`
+  yang dijalankan user pada 2026-08-19 11:33–12:46 WITA, 60 run sukses tanpa gagal) dan
+  `../../docs/05_accuracy_results.md` (akurasi FP32).
+- **Statistik tambahan yang dihitung khusus untuk bab ini** (belum ada di file CSV yang sudah
+  ada, dihitung dari `data/benchmark/*/*/fps.csv` mentah via `utils/benchmark_analysis/common.py`
+  + pandas, tidak disimpan sebagai file permanen — hanya dipakai sekali untuk mengisi tabel):
+  median/p95/p99 `Lat_Tracker_ms` dan `Latency_ms` per skenario (pooled per-frame, bukan
+  rata-rata dari rata-rata), estimasi energi per frame (`avg_VDD_IN_mW` ÷ `avg_fps`), dan FPS
+  minimum/maksimum per skenario dari `runtime_per_run.csv`.
+- **Uji signifikansi**: dijalankan `utils/benchmark_analysis/tradeoff_analysis.py --significance`
+  (Welch's t-test) untuk seluruh pasangan NvDCF vs NvSORT (6 model) dan pasangan baseline vs
+  EfficientNMS (YOLOv8n, YOLOv9t) — hasil p-value dicantumkan di tabel §4.3.2 dan §4.3.3.
+- **Temuan utama yang masuk ke bab**: (a) `Lat_Tracker_ms` NvSORT konsisten 10–62× lebih rendah
+  dari NvDCF di keenam model, tapi dampaknya ke FPS akhir hanya signifikan besar pada YOLOv9t
+  (+30%/+33%) karena pipeline model ini sudah mendekati batas throughput; (b) EfficientNMS pada
+  YOLOv9t secara statistik signifikan **lebih lambat** dari baseline (p=0,023) — hasil negatif
+  yang dijelaskan lewat karakteristik tail-dependent plugin EfficientNMS_TRT
+  (`utils/trt_efficientnms/README.md`); (c) estimasi energi/frame menunjukkan NvSORT lebih hemat
+  di keenam model walau daya sesaat kadang lebih tinggi (YOLOv9t) — diselesaikan lewat normalisasi
+  daya/FPS; (d) seluruh 60 run (termasuk FPS minimum per skenario) melampaui ambang real-time 30
+  FPS dengan margin besar.
+- **Bagian yang sengaja dibiarkan TODO** (tidak mengarang data): §4.2.2 (verifikasi akurasi
+  as-deployed FP16 — infrastruktur siap tapi belum dieksekusi, sesuai status di
+  `BAB-3-Metodologi-Penelitian.md` §3.5 poin 4) dan §4.6 (perbandingan dengan penelitian terkait
+  di Bab II — perlu penulis merujuk ulang jurnal yang relevan).
+- **Catatan transparansi ditambahkan di §4.1.1**: klarifikasi bahwa galat `jetson_clocks_status`
+  di `run_info.txt` ("Run this script as a root user") berasal dari pemeriksaan status tanpa
+  sudo di `run_benchmark.sh`, bukan indikasi clock gagal terkunci (langkah pengunci sesungguhnya
+  pakai sudo di awal `run_all_benchmark.sh` dengan `set -e`); juga dicatat keterbatasan durasi
+  klip video per run (~13–20 detik, lebih pendek dari rekomendasi 180 detik protokol) di §4.5.4.
+
 ## 2026-08-18 14:45 WITA — Eksekusi perdana `aggregate_runtime.py` dengan data benchmark awal
 
 - **skripsi/eksperimen/runtime_summary.csv**, **runtime_per_run.csv**: Berhasil menjalanakan script agregasi dan menghasilkan data awal untuk BAB IV.

@@ -7,9 +7,17 @@ setiap kali ada file baru yang ditambahkan (oleh AI maupun user).
 > didownload ke folder ini — daftar ini baru dipindahkan dari Daftar Pustaka
 > `../Proposal/Proposal Final Perdi - AGX Orin ADAS-1.pdf` (halaman 14-16) pada 2026-08-14
 > supaya sitasi terkumpul di satu tempat. Isi kolom **File** begitu PDF benar-benar
-> didownload ke `journal/`. Lihat `../draft/BAB-2-Tinjauan-Pustaka.md` §2.1 untuk status
-> verifikasi tiap jurnal (mana yang sudah ada ringkasan metodologi/hasil vs. baru klaim
-> tematik vs. belum terverifikasi sama sekali).
+> didownload ke `journal/`.
+>
+> **Update 2026-08-19 (restrukturisasi format Unhas):** `../draft/BAB-2-Tinjauan-Pustaka.md`
+> (draf lama) sudah dihapus. Ringkasan *state of the art* (klaster deteksi objek YOLO pada
+> *edge* + klaster akselerasi NMS, dulu §2.1.1–§2.1.2) kini ada di
+> `../draft/BAB-1-Pendahuluan.md` §1.1; klaster efisiensi *real-time*/penjadwalan (dulu §2.1.3)
+> dan konteks umum ADAS (dulu §2.1.4) sudah lebih dulu terwakili sebagai sitasi langsung di
+> §1.1 sejak draf awal. Landasan teori (dulu §2.2) kini terintegrasi di
+> `../draft/BAB-2-Metode-Penelitian.md` §2.2 dan §2.5. Kolom **Relevansi** di bawah masih
+> menyebut nomor bagian lama ("BAB II §2.1.x"/"§2.2.x") sebagai jejak sejarah dari mana ringkasan
+> tiap jurnal berasal; lihat pemetaan lokasi baru di paragraf ini sebelum menelusuri.
 >
 > **Catatan penghapusan (2026-08-14):** dari 20 sitasi asli Daftar Pustaka proposal, 1 sitasi
 > — "Wu, J., dkk. (2024)" — **dihapus permanen** dari tabel ini atas instruksi eksplisit
