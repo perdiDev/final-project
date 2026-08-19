@@ -4,7 +4,7 @@
 # ==============================================================================
 set -e
 
-# Waktu jeda (cooldown) antar run
+# Waktu jeda (cooldown) antar skenario (dalam detik)
 COOLDOWN_TIME=60
 
 # Jumlah pengulangan setiap skenario
@@ -20,16 +20,16 @@ cd "$PROJECT_ROOT" || exit 1
 # INISIALISASI HARDWARE JETSON
 # ==============================================================================
 echo "[INFO] Mengatur Jetson Orin Nano ke mode performa maksimal (MAXN)..."
+# Memastikan mode MAXN (mode 0) aktif
 sudo nvpmodel -m 0
+# Memaksa kipas dan clock CPU/GPU berjalan di frekuensi maksimal
 sudo jetson_clocks
 
 echo "[INFO] Status jetson_clocks:"
 sudo jetson_clocks --show
 echo ""
 
-# ==============================================================================
-# DEFINISI MODEL & TRACKER
-# ==============================================================================
+# 1. Definisikan 6 Config Model
 MODELS=(
     "yolov8n_kitti"
     "yolov9t_kitti"
@@ -39,6 +39,7 @@ MODELS=(
     "yolov9t_kitti_efficientnms"
 )
 
+# 2. Definisikan 2 Tracker
 TRACKERS=(
     "nvdcf"
     "nvsort"
