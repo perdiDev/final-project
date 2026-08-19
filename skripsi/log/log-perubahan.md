@@ -10,6 +10,67 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-19 16:20 WITA — Gabungkan BAB I–IV (lengkap) menjadi satu naskah docx
+
+Permintaan user: gabungkan skripsi yang sudah selesai (BAB I–IV, seluruhnya sudah terisi
+penuh sejak entri 15:10 WITA) menjadi satu dokumen. `draft/_build/*.clean.md` dan
+`draft/Skripsi-Gabungan-BAB-I-III.docx` sebelumnya masih merepresentasikan struktur BAB
+I–III **lama** (sebelum restrukturisasi format Unhas 14:20 WITA) dan tidak menyertakan BAB
+IV sama sekali — sesuai catatan "belum dilakukan" pada entri 14:20 WITA, keduanya dibangun
+ulang di sesi ini.
+
+**File yang diubah:**
+
+- **draft/BAB-1-Pendahuluan.md** §1.6 Sistematika Penulisan: placeholder `TODO` diisi
+  dengan ringkasan 1 paragraf per bab (BAB I–IV), karena struktur akhir seluruh bab kini
+  sudah stabil dan lengkap — tidak ada data eksperimen baru yang dikarang, murni ringkasan
+  struktural dari isi bab yang sudah ada.
+- **draft/_build/clean_chapter.py** (BARU): skrip pembersih markdown yang menggantikan
+  proses manual sebelumnya — menghapus blok blockquote status/`[VERIFIKASI]` di awal tiap
+  bab, menghapus section `## Judul (revisi)` (khusus BAB I), dan melucuti tag inline
+  `` `[VERIFIKASI]` `` di tengah paragraf/tabel tanpa menghapus kalimat substantifnya.
+  Divalidasi dengan cara menjalankannya pada `BAB-1-Pendahuluan.md` dan membandingkan
+  hasilnya terhadap `BAB-1.clean.md` versi lama — ditemukan bahwa versi lama tersebut sudah
+  usang (belum memuat 3 paragraf *state of the art* yang dipindahkan dari
+  `BAB-2-Tinjauan-Pustaka.md` pada restrukturisasi 14:20 WITA), mengonfirmasi perlunya
+  regenerasi penuh.
+- **draft/_build/BAB-1.clean.md, BAB-2.clean.md, BAB-3.clean.md**: dibangun ulang dari draf
+  sumber terbaru (pasca-restrukturisasi format Unhas) via `clean_chapter.py`.
+- **draft/_build/BAB-4.clean.md** (BARU): versi bersih `BAB-4-Kesimpulan-dan-Saran.md`,
+  dibangun via `clean_chapter.py`.
+- **draft/_build/generate_docx.py**: (a) `BUILD_DIR`/`OUT_PATH` diubah dari path absolut
+  hardcoded milik mesin lain (`/home/perdidev/dev/final-project/...`) menjadi path relatif
+  terhadap lokasi skrip, supaya portabel; (b) `CHAPTER_FILES` ditambah `BAB-4.clean.md`;
+  (c) subjudul halaman judul diperbarui "Bab I–III" → "Bab I–IV"; (d) `OUT_PATH` diubah ke
+  nama baru `Skripsi-Gabungan-BAB-I-IV.docx`; (e) `VERIFICATION_NOTES` dirombak: referensi
+  nomor bagian usang diperbarui mengikuti struktur baru (mis. "Bab II §2.2.7" → "Bab II
+  §2.2.1", "Bab III §3.2.2"/"§3.2.3"/"§3.6" → "Bab II §2.2.2"/"§2.2.3"/"§2.6.2", "Bab II
+  §2.1.3" → "Bab I §1.1"); butir "jumlah repetisi belum dicatat" **dihapus** karena sudah
+  resolved (60 run aktual, 5 repetisi per skenario, sudah dieksekusi dan dilaporkan di Bab
+  III); butir baru ditambahkan untuk nama laboratorium spesifik yang belum dikonfirmasi (Bab
+  II §2.1); butir verifikasi akurasi FP16 diperbarui untuk mencatat bahwa Bab IV §4.1 sudah
+  mencantumkan keterbatasan ini secara eksplisit; (f) paragraf pembuka lampiran "Catatan
+  Verifikasi" diperbarui — tidak lagi menyebut Bab IV/V sebagai "belum disertakan", karena
+  kini keempat bab sudah tercakup penuh dalam naskah gabungan.
+- **draft/Skripsi-Gabungan-BAB-I-IV.docx** (BARU, menggantikan
+  `Skripsi-Gabungan-BAB-I-III.docx` yang dihapus): dibangun dari `clean.md` terbaru via
+  `generate_docx.py` (dijalankan dengan python-docx 1.2.0 terpasang `pip install --user`).
+  Diverifikasi terprogram: tag `[VERIFIKASI]` nihil di badan naskah (satu-satunya kemunculan
+  string "VERIFIKASI" adalah judul lampiran itu sendiri), `NvDCF_perf` nihil, dan dua
+  kemunculan `TODO` yang tersisa keduanya berasal dari BAB III §3.4 (verifikasi akurasi
+  as-deployed FP16) yang memang secara jujur belum dieksekusi — sesuai kebijakan proyek
+  untuk tidak mengarang data yang belum ada.
+- **draft/Skripsi-Gabungan-BAB-I-III.docx**: dihapus (digantikan versi BAB I–IV di atas).
+
+**Belum dilakukan (di luar scope sesi ini)**: gambar/plot (`../eksperimen/plots/*.png`) yang
+dirujuk di Bab III (mis. `fps_boxplot_by_tracker.png`, `tradeoff_map_vs_fps.png`) tidak
+diembed ke docx — `generate_docx.py` hanya merender teks/tabel, path gambar tetap disebut
+apa adanya sebagai teks; penulis perlu menambahkannya manual di Word bila ingin
+ditampilkan sebagai figur. Konfirmasi rumusan masalah #3 ke dosen pembimbing juga masih
+belum dilakukan (lihat lampiran catatan verifikasi pada docx).
+
+---
+
 ## 2026-08-19 15:10 WITA — Isi penuh BAB IV (Kesimpulan dan Saran)
 
 - **skripsi/draft/BAB-4-Kesimpulan-dan-Saran.md**: skeleton TODO diisi penuh. §4.1 Kesimpulan

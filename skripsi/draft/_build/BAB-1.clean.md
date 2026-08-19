@@ -57,6 +57,53 @@ kompromi semacam ini menjadi sangat penting karena keterbatasan sumber daya dapa
 langsung berpengaruh pada keterlambatan deteksi, penurunan laju pemrosesan, dan
 berkurangnya kemampuan sistem dalam mempertahankan performa secara berkelanjutan.
 
+Kebutuhan akan pemrosesan objek *real-time* pada perangkat *edge* kelas ADAS ini juga
+didukung oleh sejumlah penelitian terapan terbaru yang secara khusus menguji keluarga model
+YOLO pada perangkat *embedded*. Ayachi dkk. (2025) mengevaluasi model YOLO v1 hingga v9 pada
+dataset BDD100K dan menyimpulkan YOLOv9 memberi keseimbangan optimal antara kecepatan (34 FPS)
+dan akurasi (85,54% mAP) untuk aplikasi ADAS *real-time*, sementara Dhatrika dkk. (2025)
+mengimplementasikan YOLOv9 pada NVIDIA Jetson Nano dengan optimasi TensorRT dan kerangka kerja
+DeepStream, mencapai mAP tinggi (91,9%) yang mengungguli model YOLOv5/YOLOv8 versi lebih lama —
+kombinasi TensorRT + DeepStream pada keluarga Jetson Nano/Orin Nano inilah yang menjadi rujukan
+metodologis paling dekat dengan pendekatan penelitian ini. Chaman dkk. (2025) menunjukkan
+YOLOv11 pada Jetson Nano dan Raspberry Pi 5 mampu mencapai mAP@50 98,1% untuk deteksi kendaraan
+modern, Guerrouj dkk. (2025) membuktikan kuantisasi *post-training* INT8 pada YOLOv4 dapat
+menaikkan kecepatan Jetson Nano dari <2 FPS menjadi 5 FPS dengan kehilangan akurasi minimal,
+Bouazizi dkk. (2024) melatih ulang SSD-MobileNet untuk objek jalan raya dengan *recall* tinggi
+(0,873) demi keselamatan deteksi pejalan kaki, Xie dkk. (2024) membuktikan efektivitas
+**DeepStream SDK** (SDK yang sama dipakai penelitian ini) untuk deteksi objek *real-time* di
+luar domain otomotif, dan Tsai & Hsieh (2025) menemukan YOLOv8n mencapai kecepatan inferensi
+112 FPS dengan ukuran model hanya 4,5 MB pada sistem peringatan tabrakan kendaraan otonom.
+Namun demikian, sebagian besar studi ini menguji satu generasi YOLO secara terisolasi atau
+membandingkannya pada dataset umum (BDD100K, MS COCO, dataset kustom) — celah yang belum
+banyak dijawab adalah perbandingan *head-to-head* beberapa generasi YOLO kelas *nano/tiny*
+terbaru (termasuk arsitektur *NMS-free*) secara konsisten pada satu platform *edge* dan satu
+dataset otomotif yang sama, yang menjadi salah satu fokus rumusan masalah #1 pada penelitian
+ini (§1.2).
+
+Selain sisi deteksi, tahap *post-processing* Non-Maximum Suppression (NMS) juga menjadi
+sorotan riset akselerasi *edge* tersendiri, karena implementasi NMS standar yang sekuensial dan
+sering dieksekusi di CPU berpotensi menjadi *bottleneck* pipeline inferensi *real-time*. Chen
+dkk. (2022) memperkenalkan ShapoolNMS, akselerator perangkat keras skalabel yang mencapai
+percepatan 305×–3626× dibandingkan *GreedyNMS* perangkat lunak; Oro dkk. (2022) mengembangkan
+kernel CUDA skalabel berbasis matriks *adjacency boolean* untuk NMS paralel pada GPU tertanam
+(Tegra X1/X2), mencapai percepatan 14×–40× dibanding metode berbasis CNN; dan Yang dkk. (2025)
+mengusulkan akselerator perangkat keras *post-processing* yang mencapai percepatan 19,89× pada
+tahap inferensi dan 7,55× pada tugas NMS dibanding sistem GPU tradisional. Ketiga penelitian
+ini secara konsisten menunjukkan bahwa memindahkan NMS dari eksekusi CPU/*host* standar ke
+eksekusi paralel di perangkat keras memberi percepatan signifikan, namun ketiganya membangun
+akselerator/kernel *khusus dari nol* (*custom hardware* atau *custom* CUDA *kernel*) — berbeda
+dari pendekatan yang lebih umum diadopsi pengembang aplikasi di industri, yaitu memanfaatkan
+*plugin* optimasi siap pakai bawaan vendor *runtime* inferensi. Celah pada penerapan pendekatan
+*plugin* vendor (bukan kernel kustom) inilah yang mendasari rumusan masalah #2 (§1.2).
+
+Selain kedua klaster di atas, tinjauan terhadap literatur yang tersedia juga **tidak menemukan
+studi yang secara langsung membandingkan efisiensi komputasi antar-algoritma *tracker*** (mis.
+pendekatan berbasis fitur visual vs. berbasis gerak murni) pada *pipeline* NVIDIA DeepStream di
+perangkat *edge* kelas Jetson Orin Nano — celah literatur inilah yang menjadi dasar rumusan
+masalah #3, sebagai pengganti rumusan masalah berbasis DLA pada proposal awal yang tidak dapat
+dilaksanakan pada perangkat target akhir (lihat paragraf berikut dan §1.2).
+
 Selain beban komputasi, sistem ADAS juga menuntut karakteristik *deterministic* dan
 stabil karena bersifat *safety-critical*. Setiap proses harus selesai sesuai tenggat
 waktu agar fungsi peringatan, deteksi, dan respons dapat berjalan secara konsisten di
@@ -138,15 +185,35 @@ berikut:
 5. Evaluasi algoritma *tracking* dibatasi pada aspek **efisiensi komputasi** (FPS,
    latensi per-komponen, utilisasi *resource*), dan **tidak mencakup evaluasi kualitas
    atau akurasi *tracking*** (mis. jumlah *ID switch*, MOTA/IDF1). Pembatasan ini konsisten
-   dengan rumusan masalah ketiga yang memang dirumuskan secara eksplisit sebagai
-   pertanyaan efisiensi komputasi (§1.2), sejalan dengan sumbu akurasi-vs-komputasi yang
-   sudah melekat pada desain profil NvDCF dan NvSORT itu sendiri menurut dokumentasi resmi
-   NVIDIA (lihat Bab II §2.2.6) — bukan sesuatu yang perlu diukur ulang penelitian ini agar
+   dengan rumusan masalah #3 yang memang dirumuskan secara eksplisit sebagai pertanyaan
+   "efisiensi komputasi" (§1.2), sejalan dengan sumbu akurasi-vs-komputasi yang sudah
+   melekat pada desain profil NvDCF/NvSORT itu sendiri menurut dokumentasi resmi
+   NVIDIA (lihat Bab II §2.5.3) — bukan sesuatu yang perlu diukur ulang penelitian ini agar
    pertanyaannya valid dijawab. Ketidaktersediaan dataset *tracking* berlabel (video
    berurutan dengan ID objek konsisten, mis. KITTI Tracking) pada ruang lingkup penelitian
    ini menjadi alasan pendukung tambahan.
 
 ## 1.6 Sistematika Penulisan
 
-Bagian ini akan disusun setelah seluruh isi Bab I–V penelitian ini selesai disusun, agar
-ringkasan yang diberikan mencerminkan struktur akhir laporan secara akurat.
+Untuk memberikan gambaran menyeluruh mengenai isi laporan penelitian ini, sistematika
+penulisan disusun ke dalam empat bab sebagai berikut. **BAB I Pendahuluan** memuat latar
+belakang penelitian, rumusan masalah, tujuan penelitian, manfaat penelitian, serta batasan
+masalah yang membingkai ruang lingkup penelitian pada evaluasi kinerja *real-time*,
+optimasi NMS paralel berbasis TensorRT plugin (EfficientNMS), dan efisiensi komputasi
+algoritma *tracking* (NvDCF vs. NvSORT) pada *pipeline* Nvidia DeepStream di perangkat
+Jetson Orin Nano. **BAB II Metode Penelitian** menguraikan tempat dan waktu penelitian,
+benda uji dan alat (perangkat keras, perangkat lunak, dataset, model deteksi, konfigurasi
+*tracker*, serta *tooling* otomasi pengujian), tahapan penelitian, teknik pengumpulan
+data, rancangan dan implementasi sistem (termasuk landasan teknis DeepStream SDK,
+integrasi *plugin* EfficientNMS_TRT, dan konfigurasi *multi-object tracking*), serta
+skenario pengujian dan kriteria evaluasi yang dipakai untuk menjawab ketiga rumusan
+masalah. **BAB III Hasil dan Pembahasan** menyajikan hasil pengujian kinerja *baseline*
+*pipeline* (RM1), hasil pengujian optimasi NMS paralel (RM2), hasil pengujian efisiensi
+komputasi *tracking* (RM3), verifikasi akurasi *as-deployed* FP16 sebagai uji *sanity
+check*, serta pembahasan akhir yang meliputi analisis *trade-off* kecepatan-akurasi-energi
+dan keterbatasan sistem, seluruhnya berdasarkan data eksekusi 60 *run* pengujian (6 model
+× 2 *tracker* × 5 repetisi) pada Jetson Orin Nano. **BAB IV Kesimpulan dan Saran** menutup
+laporan dengan kesimpulan yang menjawab ketiga rumusan masalah/tujuan penelitian secara
+berurutan, serta saran tindak lanjut bagi penelitian selanjutnya, termasuk verifikasi
+akurasi FP16 *as-deployed*, pengukuran suhu SoC, eksplorasi optimasi lanjutan, dan
+perluasan skenario pengujian.

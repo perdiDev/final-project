@@ -1,297 +1,43 @@
-# BAB II — TINJAUAN PUSTAKA
+# BAB II — METODE PENELITIAN
 
-## 2.1 Penelitian Terkait (State of the Art)
+## 2.1 Tempat dan Waktu Penelitian
 
-Bagian ini merangkum sepuluh penelitian pada tabel "Penelitian Terkait" proposal,
-dikelompokkan menjadi tiga klaster tema yang relevan dengan tiga rumusan masalah pada
-Bab I: (1) deteksi objek real-time untuk ADAS pada perangkat edge, (2)
-akselerasi/optimasi Non-Maximum Suppression, dan (3) konteks umum keselamatan/keandalan
-ADAS. Klaster ketiga sengaja dipisahkan karena penelitian ini tidak menemukan studi yang
-secara langsung membandingkan efisiensi komputasi antar algoritma *tracker* (NvDCF vs.
-NvSORT) pada pipeline DeepStream di perangkat edge kelas Jetson Orin Nano — celah inilah
-yang mendasari rumusan masalah ketiga (§2.3).
+Penelitian ini dilaksanakan di lingkungan Departemen Teknik Informatika, Fakultas Teknik,
+Universitas Hasanuddin — nama laboratorium spesifik (mis. Laboratorium Jaringan
+dan Visi Komputer) perlu dikonfirmasi penulis sesuai tempat aktual pelaksanaan pengujian
+perangkat keras, karena belum tercatat secara eksplisit di dokumen proyek ini. Eksekusi
+eksperimen inti (pengujian *runtime*/hardware pada Jetson Orin Nano) dilakukan pada tanggal
+**19 Agustus 2026**, pukul 11:33–12:46 WITA (± 72 menit, termasuk *cooldown* antar-*run*),
+menghasilkan 60 *run* benchmark (§2.6.1) sebagaimana tercatat pada metadata `run_info.txt` tiap
+*run* (lihat rincian kondisi eksekusi di `BAB-3-Hasil-dan-Pembahasan.md` §3.1). Tahapan
+persiapan (implementasi *pipeline*, konfigurasi model, dan penyusunan *tooling* otomasi
+pengujian, §2.2.6) berlangsung pada rentang waktu sebelumnya di tahun 2026, mengikuti linimasa
+pasca-seminar proposal.
 
-### 2.1.1 Deteksi Objek Real-Time untuk ADAS pada Edge Device
+## 2.2 Benda Uji dan Alat
 
-Ayachi dkk. (2025) melakukan evaluasi komprehensif terhadap model YOLO v1 hingga v9
-menggunakan *transfer learning* pada dataset BDD100K, dan menyimpulkan YOLOv9 memberikan
-keseimbangan optimal antara kecepatan (34 FPS) dan akurasi (85,54% mAP) untuk aplikasi
-ADAS real-time. Temuan ini menjadi salah satu dasar pemilihan varian YOLO kelas
-*nano/tiny* sebagai model uji pada penelitian ini, karena kelas ukuran tersebut dipilih
-agar anggaran komputasi setara dengan target perangkat edge.
+### 2.2.1 Perangkat Keras
 
-Dhatrika dkk. (2025) mengimplementasikan YOLOv9 pada NVIDIA Jetson Nano menggunakan
-optimasi TensorRT dan kerangka kerja DeepStream, mencapai mAP tinggi (91,9%) yang secara
-signifikan mengungguli model lama seperti YOLOv5 dan YOLOv8. Penelitian ini paling
-relevan secara metodologis dengan rumusan masalah pertama — sama-sama menggunakan
-kombinasi TensorRT + DeepStream pada keluarga Jetson Nano/Orin Nano untuk deteksi
-real-time — namun tidak membahas perbandingan antar-generasi model YOLO maupun optimasi
-*post-processing* (NMS) yang menjadi fokus tambahan penelitian ini.
+| Komponen | Spesifikasi |
+|---|---|
+| *Compute board* | NVIDIA **Jetson Orin Nano 4GB** — *System-on-Chip* (SoC) *embedded* berbasis arsitektur GPU Ampere, bagian dari keluarga Jetson Orin yang ditujukan untuk aplikasi *edge AI* berdaya rendah. Berbeda dari varian Jetson Orin NX dan Jetson AGX Orin, Jetson Orin Nano **tidak dilengkapi Deep Learning Accelerator (DLA)** — akselerator inferensi khusus yang terpisah dari GPU utama — sehingga strategi optimasi yang bergantung pada DLA (seperti pada proposal awal penelitian ini yang menargetkan Jetson AGX Orin) tidak dapat diterapkan pada perangkat ini (lihat `BAB-1-Pendahuluan.md` §1.1 dan §1.5). |
+| Kamera | Stereolabs ZED (stereo), dipakai hanya sebagai sumber *stream* 2D — lihat batasan `BAB-1-Pendahuluan.md` §1.5 dan limitasi `../../docs/08_limitations_future_work.md` poin 1. Didukung pada FPS 15/30/60/100/120 (`--camera-fps`, default konfigurasi *benchmark*: 30 FPS). |
 
-Chaman dkk. (2025) menerapkan YOLOv11 pada Jetson Nano dan Raspberry Pi 5 dengan dataset
-kustom 38.500 gambar, mencapai mAP@50 sebesar 98,1% dan membuktikan YOLOv11 cukup tangguh
-untuk mendeteksi kendaraan modern seperti *e-scooter*. Guerrouj dkk. (2025) menguji
-kuantisasi *post-training* INT8 pada YOLOv4 untuk perangkat edge, menaikkan kecepatan
-Jetson Nano dari <2 FPS menjadi 5 FPS dengan kehilangan akurasi minimal — relevan sebagai
-pembanding trade-off presisi (INT8 vs. FP16 yang dipakai penelitian ini).
-
-Bouazizi dkk. (2024) melatih ulang model SSD-MobileNet pada subset MS COCO khusus objek
-jalan raya, mencapai mAP 65,41% pada 71 FPS dengan memprioritaskan *recall* tinggi
-(0,873) demi keselamatan deteksi pejalan kaki. Xie dkk. (2024) menggabungkan YOLOv5s
-dengan **DeepStream SDK** untuk deteksi objek real-time dari video inspeksi UAV,
-mencapai mAP50 93,2% — menjadi salah satu preseden literatur yang membuktikan
-efektivitas *framework* DeepStream di luar domain otomotif.
-
-Tsai & Hsieh (2025) mengembangkan sistem peringatan tabrakan (*collision warning*)
-real-time untuk kendaraan otonom berbasis YOLOv8n dikombinasikan dengan *stereo vision*
-SGBM, dan menemukan YOLOv8n mencapai kecepatan inferensi 112 FPS dengan ukuran model
-hanya 4,5 MB — menjadikannya pilihan paling praktis untuk deteksi kendaraan real-time
-pada platform *embedded* dengan sumber daya terbatas (*MDPI Electronics*, 14(21), 4275).
-
-### 2.1.2 Optimasi dan Akselerasi Non-Maximum Suppression
-
-Klaster ini menjadi dasar literatur untuk rumusan masalah kedua. Chen dkk. (2022)
-memperkenalkan ShapoolNMS, akselerator perangkat keras skalabel untuk algoritma
-PSRR-MaxpoolNMS, mencapai percepatan 305x hingga 3626x dibandingkan perangkat lunak
-GreedyNMS dengan akurasi deteksi yang tetap terjaga. Oro dkk. (2022) mengembangkan
-kernel CUDA skalabel berbasis matriks adjacency boolean untuk menyelesaikan NMS secara
-paralel pada GPU tertanam (Tegra X1/X2), mampu mengelompokkan 1024 objek dalam ±1 ms dan
-mencapai percepatan 14x–40x dibanding metode NMS berbasis CNN yang ada (*The Computer
-Journal*, 65(4), 773–787). Yang dkk. (2025) mengusulkan akselerator perangkat keras
-untuk *post-processing* dengan prioritas klasifikasi guna mengurangi kalkulasi IoU
-redundan, mencapai percepatan 19,89x pada tahap inferensi dan 7,55x pada tugas NMS
-dibanding sistem GPU tradisional (RTX 2080 Ti).
-
-Ketiga penelitian ini secara konsisten menunjukkan bahwa memindahkan NMS dari
-implementasi CPU/host standar ke eksekusi paralel di perangkat keras (GPU/akselerator
-khusus) memberikan percepatan signifikan — inilah landasan konseptual proposal awal
-untuk mengimplementasikan NMS paralel. Namun ketiganya membangun akselerator/kernel
-*khusus dari nol* (custom hardware atau custom CUDA kernel), berbeda dengan pendekatan
-penelitian ini yang menggunakan plugin `EfficientNMS_TRT` bawaan TensorRT (lihat §2.2.5)
-— sebuah integrasi *graph-level* siap pakai, bukan kernel paralel yang ditulis manual.
-Perbedaan pendekatan ini penting untuk dijelaskan secara eksplisit saat membandingkan
-hasil penelitian ini dengan ketiga rujukan di atas, karena mekanisme percepatan yang
-diharapkan (kernel kustom vs. plugin vendor) tidak sepenuhnya identik.
-
-### 2.1.3 Efisiensi Real-Time dan Penjadwalan pada Edge Device
-
-Klaster ini merangkum penelitian yang mendasari Bab I §1.1 Latar Belakang, menjelaskan
-mengapa efisiensi komputasi/real-time pada perangkat edge menjadi persoalan penting yang
-mendasari seluruh tiga rumusan masalah.
-
-Choi dkk. (2024) menunjukkan bahwa deteksi dan pelacakan objek berbasis perangkat
-*embedded edge* merupakan aspek mendasar untuk pembentukan informasi lingkungan (*local
-dynamic map*) secara real-time pada kendaraan cerdas — relevan langsung dengan
-penggabungan deteksi (rumusan masalah pertama dan kedua) dan *tracking* (rumusan
-masalah ketiga) pada penelitian ini. Nigade dkk. (2024) mengkaji *inference serving*
-dengan *end-to-end latency SLOs* pada jaringan edge yang dinamis, menyimpulkan ketepatan
-waktu penyajian inferensi sama pentingnya dengan akurasi model. Zhang dkk. (2024)
-meneliti penempatan *server* edge berbasis *graph clustering*, menekankan bahwa
-pengaturan sumber daya yang tidak tepat dapat memperbesar latensi dan mengganggu
-pencapaian kinerja real-time pada aplikasi kritis.
-
-Ruiz-Barroso dkk. (2025) membahas optimasi *deployment* pada platform *embedded
-heterogen* agar kebutuhan *frame rate*, akurasi, dan efisiensi energi tetap terpenuhi
-secara simultan. Suder dkk. (2023) mengevaluasi kebutuhan daya perangkat *embedded*
-untuk deteksi garis video real-time, menemukan bahwa pemrosesan real-time selalu
-menuntut kompromi antara kecepatan, efisiensi energi, dan stabilitas kinerja pada beban
-kerja yang berubah-ubah — preseden langsung untuk metrik utilisasi daya (`tegrastats`)
-yang dipakai penelitian ini (lihat §2.2.8). Seyfipoor dkk. (2026) meneliti penjadwalan
-tugas berbasis urgensi adaptif pada sistem ADAS, menemukan bahwa penjadwalan tugas ADAS
-sangat peka terhadap *deadline* dan kegagalan memenuhi batas waktu dapat berimplikasi
-pada kegagalan sistem secara fungsional. Shah dkk. (2025) mencatat bahwa penguatan ADAS
-melalui *computer vision* dan *machine learning* meningkatkan kapabilitas deteksi namun
-juga menuntut proses komputasi yang lebih besar — argumen yang menjustifikasi perlunya
-penelitian trade-off akurasi-vs-efisiensi seperti yang dilakukan pada penelitian ini.
-
-### 2.1.4 Konteks Umum ADAS dan Keselamatan
-
-Neumann (2024) menganalisis operasional berbagai sensor ADAS dan melakukan survei
-terhadap 80 pengemudi, menemukan lebih dari 50% pengemudi merasa jauh lebih aman dengan
-ADAS namun hasil survei menekankan perlunya peningkatan presisi untuk mengurangi *alarm
-palsu*. Costa dkk. (2025) mengkaji dampak keselamatan ADAS di Eropa hingga 2030, sejalan
-dengan klaim bahwa penerapan ADAS berpotensi menurunkan angka kecelakaan berat (dikutip
-di Bab I §1.1 paragraf pertama). Kedua penelitian ini tidak membahas aspek teknis
-pipeline, tetapi memberi konteks motivasi (mengapa performa real-time dan presisi
-deteksi ADAS penting) yang relevan untuk Bab I §1.1 Latar Belakang.
-
-## 2.2 Landasan Teori
-
-### 2.2.1 ADAS dan Perception Layer
-
-*Advanced Driver-Assistance System* (ADAS) adalah kumpulan sistem elektronik yang
-membantu pengemudi dalam berkendara dan memarkir kendaraan, umumnya melalui rangkaian
-sensor (kamera, radar, LiDAR) dan unit pemrosesan yang mendeteksi kondisi lingkungan
-sekitar kendaraan secara real-time (Shah dkk., 2025; Neumann, 2024). Penelitian ini
-secara eksplisit membatasi diri pada *perception layer* — tahap deteksi objek dari citra
-kamera — dan tidak mencakup lapisan prediksi, *planning*, maupun kontrol kendaraan
-(lihat Bab I §1.5 Batasan Masalah).
-
-### 2.2.2 NVIDIA DeepStream SDK
-
-NVIDIA DeepStream adalah SDK untuk membangun aplikasi *streaming analytics* berbasis
-GStreamer yang dioptimalkan untuk perangkat keras NVIDIA, mencakup tahap decode video,
-inferensi deep learning, *object tracking*, hingga penggambaran hasil (on-screen
-display) dan *output* akhir dalam satu *pipeline* tunggal. Karakteristik kunci
-DeepStream yang relevan untuk penelitian ini adalah penggunaan buffer **NVMM (NVIDIA
-Memory Manager)**, yang memungkinkan seluruh tahap pipeline (decode → inferensi →
-tracking → encode) berjalan di memori GPU tanpa banyak *copy* data bolak-balik ke CPU
-(*zero-copy*) — karakteristik ini menjadi salah satu alasan pemilihan DeepStream
-dibanding pipeline manual berbasis OpenCV + TensorRT/ONNXRuntime.
-
-Arsitektur pipeline DeepStream pada penelitian ini terdiri atas elemen `nvstreammux`
-(batching frame ke buffer NVMM), `nvinfer` (Primary GIE — inferensi model YOLO),
-`nvtracker` (asosiasi ID objek antar frame), `nvvideoconvert`, dan `nvdsosd`
-(penggambaran *bounding box*), sebelum diteruskan ke *output sink* (RTSP, layar lokal,
-atau berkas MP4).
-
-### 2.2.3 TensorRT dan Presisi Komputasi (FP32, FP16, INT8)
-
-TensorRT adalah *runtime* inferensi deep learning dari NVIDIA yang mengoptimalkan model
-terlatih (melalui *layer fusion*, kernel auto-tuning, dan kuantisasi presisi) menjadi
-*engine* yang dieksekusi secara efisien pada GPU target. Tiga tingkat presisi umum yang
-didukung adalah FP32 (presisi penuh, baseline akurasi), FP16 (setengah presisi,
-memanfaatkan Tensor Core untuk percepatan dengan penurunan akurasi yang umumnya dapat
-diabaikan), dan INT8 (kuantisasi bilangan bulat 8-bit, tercepat namun membutuhkan
-dataset kalibrasi tambahan dan berisiko kehilangan akurasi lebih besar).
-
-Penelitian ini menggunakan presisi **FP16** secara konsisten di seluruh model uji,
-dengan pertimbangan: Jetson Orin Nano tidak memiliki *Deep Learning Accelerator* (DLA)
-seperti seri Orin NX/AGX Orin sehingga keuntungan INT8 khas DLA tidak berlaku, sementara
-FP32 tidak memanfaatkan penuh Tensor Core GPU Ampere pada perangkat ini untuk keuntungan
-akurasi yang hampir tidak terasa (lihat Bab I §1.1 mengenai keterbatasan DLA).
-Perbandingan akurasi FP32-proxy (hasil `YOLO.val()` di `.pt`) vs. FP16 as-deployed
-(hasil pipeline DeepStream sesungguhnya) menjadi bagian dari metodologi pengujian
-akurasi — lihat Bab III §3.5.
-
-### 2.2.4 Arsitektur YOLO (You Only Look Once)
-
-YOLO adalah keluarga arsitektur deteksi objek *single-stage* yang memprediksi *bounding
-box* dan kelas objek dalam satu kali *forward pass* jaringan, menjadikannya cocok untuk
-aplikasi real-time dibanding pendekatan *two-stage* (mis. Faster R-CNN). Penelitian ini
-menguji empat varian generasi YOLO kelas nano/tiny — YOLOv8n, YOLOv9t, YOLOv10n, dan
-YOLO26n — yang dipilih karena kelas ukuran model yang setara (anggaran komputasi kira-
-kira sebanding), sehingga selisih hasil antar model lebih mencerminkan perbedaan
-arsitektur generasi ketimbang perbedaan skala model. Salah satu perbedaan arsitektural
-penting antar generasi ini adalah pendekatan terhadap NMS: sebagian model generasi baru
-(mis. YOLO26n dalam repositori ini) bersifat *NMS-free*, yaitu tidak memerlukan tahap
-NMS terpisah karena model sudah dilatih untuk menghasilkan prediksi tanpa duplikasi —
-poin ini relevan untuk interpretasi hasil rumusan masalah kedua, karena optimasi NMS
-(EfficientNMS) secara inheren tidak berlaku sama untuk model NMS-free.
-
-### 2.2.5 Non-Maximum Suppression (NMS) dan EfficientNMS_TRT
-
-Non-Maximum Suppression adalah algoritma *post-processing* yang menyaring kandidat
-*bounding box* hasil deteksi mentah suatu model, membuang box yang tumpang tindih
-(berdasarkan ambang *Intersection-over-Union*/IoU) dengan box lain yang memiliki skor
-keyakinan lebih tinggi untuk objek yang sama. Implementasi NMS standar (mis.
-*GreedyNMS*) bersifat sekuensial dan sering dieksekusi di CPU, sehingga berpotensi
-menjadi *bottleneck* pada pipeline inferensi real-time di perangkat edge — motivasi
-inilah yang mendasari berbagai penelitian akselerasi NMS pada §2.1.2.
-
-Penelitian ini mengimplementasikan optimasi NMS menggunakan plugin **`EfficientNMS_TRT`**
-bawaan TensorRT, yang menyisipkan algoritma NMS sebagai bagian dari *graph* TensorRT itu
-sendiri sehingga dieksekusi penuh oleh kernel GPU tanpa *loop* NMS Python/CPU pada
-*engine* hasil, dan tanpa mengubah arsitektur ONNX/engine *baseline* (`EfficientNMS_TRT`
-dipasang sebagai *tail* tambahan yang bergantung pada output detektor). Pendekatan ini
-berbeda dari rancangan yang digambarkan pada diagram arsitektur proposal awal — sebuah
-kernel CUDA custom dengan tahap *ParallelDispatch* → *Workers* evaluasi pasangan IoU →
-*Custom Map Kernel* → *ParallelReduce* — yang menggambarkan kernel paralel yang ditulis
-dari nol, sedangkan implementasi akhir penelitian ini memakai plugin siap pakai dari
-vendor.
-
-### 2.2.6 Multi-Object Tracking pada Edge Device: NvDCF dan NvSORT
-
-*Object tracking* pada pipeline video mengasosiasikan deteksi objek antar frame
-berurutan dengan sebuah ID unik, mengurangi efek *flicker* (objek terdeteksi lalu hilang
-sesaat akibat kegagalan deteksi sesaat, mis. karena *partial occlusion*). NVIDIA
-DeepStream menyediakan elemen `nvtracker` yang dapat dikonfigurasi dengan beberapa
-profil algoritma tracking melalui berkas YAML. Penelitian ini membandingkan dua profil
-yang mewakili ujung-ujung spektrum efisiensi komputasi:
-
-- **NvDCF** (*Discriminative Correlation Filter*): tracker berbasis filter korelasi
-  dengan fitur visual yang dipelajari (*learned feature*), umumnya lebih akurat dalam
-  mempertahankan identitas objek pada kondisi oklusi parsial, namun membutuhkan
-  komputasi lebih berat karena proses ekstraksi fitur dan pencarian korelasi per objek
-  per frame.
-- **NvSORT**: tracker klasik berbasis filter Kalman dan algoritma Hungarian untuk
-  asosiasi data (pendekatan SORT — *Simple Online and Realtime Tracking*), tanpa
-  ekstraksi fitur visual sehingga jauh lebih ringan secara komputasi dibanding pendekatan
-  berbasis *deep/correlation feature* seperti NvDCF, dengan kompromi pada ketahanan
-  terhadap oklusi.
-
-*Baseline* implementasi proyek ini menggunakan profil NvDCF, dengan kedua berkas
-konfigurasi (`config/tracker_nvdcf.yml`, `config/tracker_nvsort.yml`) sudah tersedia di
-repositori proyek. Trade-off akurasi-vs-komputasi antara pendekatan *feature-based*
-(NvDCF) dan *motion-only* (NvSORT) inilah yang mendasari rumusan masalah ketiga — namun
-sesuai Batasan Masalah Bab I §1.5 poin 5, penelitian ini **murni mengukur sisi efisiensi
-komputasi** (FPS, `Lat_Tracker_ms`, utilisasi resource) dan tidak mengukur sisi kualitas
-asosiasi ID (MOTA/IDF1/ID switch).
-
-Pembatasan ini bukan sekadar konsekuensi keterbatasan dataset, melainkan konsisten
-dengan definisi sumbu perbandingan yang sudah melekat pada desain kedua profil tracker
-itu sendiri. Dokumentasi resmi NVIDIA (*Gst-nvtracker* plugin manual, DeepStream SDK)
-menyatakan NvSORT "tidak melibatkan pemrosesan data piksel sama sekali" sehingga
-"efisien secara komputasi", dan menempatkan NvDCF sebagai tracker yang "sangat tangguh
-terhadap oklusi parsial" dengan parameter yang dapat disesuaikan untuk *trade-off*
-akurasi dan performa, sementara NvSORT digambarkan sebagai tracker yang "ringan" dengan
-"akurasi yang cukup memadai" (NVIDIA, t.t.). Sejalan dengan itu, tulisan resmi NVIDIA
-Developer Blog perihal DeepStream SDK 6.2 juga secara eksplisit menempatkan NvSORT
-sebagai *"lightweight, CPU-only implementation but still competitively accurate"* dan
-NvDCF sebagai penghasil *"best accuracy and robustness"* lewat kombinasi *conventional
-machine learning* (DCF) dan *deep learning* (ReID) (Shin & Li, 2023). Kedua sumber ini
-mengonfirmasi bahwa sumbu akurasi-vs-komputasi antara NvDCF dan NvSORT memang didesain
-vendor sebagai *trade-off* yang sudah diketahui karakteristiknya secara kualitatif, bukan
-sesuatu yang perlu diukur ulang oleh penelitian ini untuk membuat pertanyaan "tracker
-mana yang lebih efisien secara komputasi" valid dijawab.
-
-Pendekatan mengevaluasi pilihan algoritma murni dari sisi biaya komputasi — dengan
-karakter akurasi/kualitas sudah diketahui dan tidak diukur ulang — juga memiliki
-preseden metodologis yang mapan di luar domain tracking: benchmark **MLPerf Mobile
-Inference Benchmark** (Janapa Reddi dkk., 2022) menetapkan pada setiap tugas pengujian
-sebuah *ambang akurasi dan kualitas minimum* sebagai syarat kelulusan tetap, sementara
-metrik yang secara eksplisit dibandingkan dan dilaporkan meningkat antar generasi
-submisi adalah latensi dan *throughput* (tercatat membaik hingga 12x dalam rentang enam
-bulan pada salah satu kasus) — struktur yang serupa dengan penelitian ini, karena
-karakteristik akurasi setiap tracker sudah didokumentasikan kualitatif oleh vendor, dan
-kontribusi penelitian ini adalah mengkuantifikasi biaya komputasinya secara spesifik
-pada perangkat Jetson Orin Nano yang belum ada di literatur (§2.1.3). Preseden ini
-relevan pula karena MLPerf Mobile secara khusus menyasar evaluasi performa pada
-perangkat *on-device*/*edge* dengan sumber daya terbatas — konteks yang sejalan dengan
-platform Jetson Orin Nano pada penelitian ini, alih-alih server kelas *datacenter*.
-
-Adapun ketidaktersediaan dataset ber-anotasi *track ID* berurutan tetap menjadi alasan
-pendukung (bukan alasan tunggal): metrik kualitas tracking (MOTA/IDF1/ID switch) secara
-struktural membutuhkan *ground truth* dengan field identitas objek yang konsisten antar
-frame (mis. benchmark KITTI Tracking, MOTChallenge MOT16/17/20), berbeda dari dataset
-deteksi single-frame seperti KITTI 2D Object Detection yang dipakai penelitian ini
-(kotak per frame tanpa field ID lintas-frame) — sehingga menambah metrik ini bukan
-sekadar menghitung ulang, melainkan membutuhkan dataset dan proses anotasi baru yang di
-luar ruang lingkup penelitian.
-
-### 2.2.7 Jetson Orin Nano sebagai Platform Edge Device
-
-NVIDIA Jetson Orin Nano adalah *System-on-Chip* (SoC) embedded berbasis arsitektur GPU
-Ampere, bagian dari keluarga Jetson Orin yang ditujukan untuk aplikasi *edge AI* dengan
-konsumsi daya rendah. Berbeda dari varian Jetson Orin NX dan Jetson AGX Orin, Jetson
-Orin Nano **tidak dilengkapi Deep Learning Accelerator (DLA)** — komponen akselerator
-khusus inferensi terpisah dari GPU utama — sehingga strategi optimasi yang bergantung
-pada DLA, seperti pada proposal awal penelitian ini yang menargetkan Jetson AGX Orin,
-tidak dapat diterapkan pada perangkat ini (lihat Bab I §1.1 dan §1.5 Batasan Masalah).
-
-Unit yang dipakai pada penelitian ini adalah varian **Jetson Orin Nano 4GB** (bukan
-8GB). Identifikasi ini didasarkan pada mode daya maksimum yang terbaca lewat
-`nvpmodel -q` pada perangkat, yaitu **10W** — nilai ini unik untuk SKU 4GB pada firmware
-standar (non-*Super*): modul 8GB pada firmware yang sama hanya memiliki mode 7W/15W
-(tidak ada mode 10W), sesuai tabel *Operating Requirements* pada *datasheet* resmi
-NVIDIA (NVIDIA, 2024). Karena mode maksimum yang terbaca adalah 10W — bukan 25W —
-perangkat juga dipastikan berjalan pada konfigurasi daya **default** (7W/10W), bukan
-mode `MAXN_SUPER` (JetPack 6.2+), sehingga performa GPU/CPU yang menjadi acuan Bab IV
-mencerminkan batas atas mode default tersebut, bukan performa puncak SoC.
+**Identifikasi SKU dan mode daya.** Unit yang dipakai adalah varian **4GB** (bukan 8GB).
+Identifikasi ini didasarkan pada mode daya maksimum yang terbaca lewat `nvpmodel -q` pada
+perangkat, yaitu **10W** — nilai ini unik untuk SKU 4GB pada *firmware* standar (non-*Super*):
+modul 8GB pada *firmware* yang sama hanya memiliki mode 7W/15W (tidak ada mode 10W), sesuai
+tabel *Operating Requirements* pada *datasheet* resmi NVIDIA (NVIDIA, 2024). Karena mode
+maksimum yang terbaca adalah 10W — bukan 25W — perangkat juga dipastikan berjalan pada
+konfigurasi daya **default** (7W/10W), bukan mode `MAXN_SUPER` (JetPack 6.2+), sehingga performa
+GPU/CPU yang menjadi acuan Bab III mencerminkan batas atas mode *default* tersebut, bukan
+performa puncak SoC. Identifikasi ini diturunkan dari pembacaan `nvpmodel`, bukan
+inspeksi label fisik modul — penulis disarankan mengonfirmasi ulang dengan
+`cat /proc/device-tree/model` di perangkat saat kembali tersedia, sebagai verifikasi independen.
 
 **Tabel 2.1** Spesifikasi Jetson Orin Nano 4GB (NVIDIA, 2024)
 
-| Komponen | Mode default (7W/10W) — dipakai penelitian ini | Mode `MAXN_SUPER` (tidak dipakai) |
+| Komponen | Mode *default* (7W/10W) — dipakai penelitian ini | Mode `MAXN_SUPER` (tidak dipakai) |
 |---|---|---|
 | GPU | Ampere, 512 CUDA core, 16 Tensor core (generasi ke-3), hingga 625 MHz | hingga 1020 MHz |
 | Performa AI (INT8) | 10 TOPS (*dense*) / 20 TOPS (*sparse*) | 17 TOPS (*dense*) / 34 TOPS (*sparse*) |
@@ -300,55 +46,402 @@ mencerminkan batas atas mode default tersebut, bukan performa puncak SoC.
 | Mode daya tersedia | 7W / 10W / 25W (`MAXN_SUPER`) | — |
 | DLA | Tidak tersedia | Tidak tersedia |
 
-Sumber: NVIDIA (2024), tabel "AI Performance", "GPU Operation" (Tabel 2-1), "CPU
-Cluster", "Memory Subsystem", dan "Operating Requirements".
+Sumber: NVIDIA (2024), tabel "AI Performance", "GPU Operation" (Tabel 2-1), "CPU Cluster",
+"Memory Subsystem", dan "Operating Requirements".
 
-### 2.2.8 Metrik Evaluasi
+### 2.2.2 Perangkat Lunak
 
-Penelitian ini menggunakan dua kelompok metrik evaluasi, mengikuti pembagian pada
-proposal (§"Analisis dan Benchmarking") dan implementasi *tooling* yang sudah tersedia:
+| Komponen | Versi/Detail |
+|---|---|
+| *Inference SDK* | NVIDIA **DeepStream 7.1** (berbasis GStreamer) — lihat justifikasi arsitektur lengkap di §2.5.1 |
+| *Precision runtime* | **FP16** (TensorRT) |
+| Bahasa aplikasi utama | C++17 (`CMAKE_CXX_STANDARD 17`, `CMakeLists.txt:4-5`), dibangun dengan CMake ≥3.10 |
+| *Library* inti | GStreamer 1.0, GLib 2.0, `nvdsgst_meta`/`nds_meta` (DeepStream *metadata API*) — `CMakeLists.txt:24-35` |
+| *Parser custom* | `nvdsinfer_custom_impl_EfficientNMS` (`src/efficientnms_parser.cpp`, `CMakeLists.txt:41-66`), memerlukan CUDA Toolkit (dicari otomatis via `cuda_runtime_api.h`) |
+| Evaluasi akurasi (proxy FP32) | Ultralytics `YOLO.val()` (Python, Kaggle GPU Tesla T4) |
+| Evaluasi akurasi (*as-deployed* FP16) | `pycocotools.cocoeval.COCOeval` — lihat §2.6.1 poin 4 |
+| *Profiling* hardware | `tegrastats` (bawaan Jetson Linux) — justifikasi pemilihan di §2.4 |
 
-- **Kualitas deteksi**: *precision*, *recall*, dan *mean Average Precision* (mAP, pada
-  IoU threshold 0.5 dan rentang 0.5:0.95) — dihitung menggunakan
-  `pycocotools.cocoeval.COCOeval` untuk hasil *as-deployed* FP16, dan `Ultralytics
-  YOLO.val()` untuk baseline FP32-proxy.
-- **Performa runtime**: *throughput* (FPS) dan latensi *end-to-end* maupun latensi
-  per-komponen pipeline (`Lat_PreMux_ms`, `Lat_Mux_ms`, `Lat_Infer_ms`,
-  `Lat_Tracker_ms`, `Lat_PreOSD_ms`, `Lat_OSD_ms`, `Lat_Output_ms`), diukur dengan
-  *pad probe* GStreamer pada tiap elemen pipeline agar tidak mengganggu jalur kritis
-  yang sedang diukur (logger berjalan di thread terpisah via `GAsyncQueue`).
-- **Utilisasi sumber daya**: penggunaan GPU (%), CPU per-core (%), RAM, dan konsumsi
-  daya per-*rail*, diambil dari `tegrastats` dan diproses menjadi
-  `hardware_analysis.csv`.
+**Justifikasi pemilihan presisi FP16.** TensorRT adalah *runtime* inferensi *deep learning* dari
+NVIDIA yang mengoptimalkan model terlatih (melalui *layer fusion*, kernel *auto-tuning*, dan
+kuantisasi presisi) menjadi *engine* yang dieksekusi efisien pada GPU target. Tiga tingkat
+presisi umum yang didukung adalah FP32 (presisi penuh, *baseline* akurasi), FP16 (setengah
+presisi, memanfaatkan *Tensor Core* untuk percepatan dengan penurunan akurasi yang umumnya dapat
+diabaikan), dan INT8 (kuantisasi bilangan bulat 8-bit, tercepat namun membutuhkan dataset
+kalibrasi tambahan dan berisiko kehilangan akurasi lebih besar). Penelitian ini menggunakan
+presisi **FP16** secara konsisten di seluruh model uji, dengan pertimbangan: Jetson Orin Nano
+tidak memiliki DLA sehingga keuntungan INT8 khas DLA tidak berlaku (§2.2.1), sementara FP32 tidak
+memanfaatkan penuh *Tensor Core* GPU Ampere pada perangkat ini untuk keuntungan akurasi yang
+hampir tidak terasa. Perbandingan akurasi FP32-*proxy* (hasil `YOLO.val()` pada `.pt`) vs. FP16
+*as-deployed* (hasil *pipeline* DeepStream sesungguhnya) menjadi bagian dari skenario pengujian
+akurasi (§2.6.1 poin 4).
 
-Kriteria evaluasi lengkap (ambang throughput/latensi real-time, serta metrik spesifik
-untuk masing-masing rumusan masalah) dirinci pada Bab III §3.6.
+### 2.2.3 Dataset
 
-## 2.3 Kerangka Berpikir
+Dataset KITTI dengan pemetaan ulang 3 kelas kustom (`0=car`, `1=van`, `2=truck`, lihat
+`labels/labels_kitti_custom.txt`). *Split* validasi: **1.010 gambar, 4.722 instance**
+(car 4.167, van 405, truck 150) — identik untuk seluruh model, sehingga hasil akurasi antar
+model dapat dibandingkan langsung (`../../docs/02_dataset_and_training.md`,
+`../../docs/05_accuracy_results.md`). Ketimpangan kelas (`van`/`truck` jauh lebih sedikit dari
+`car`) dicatat sebagai limitasi statistik saat membahas hasil per-kelas
+(`../../docs/08_limitations_future_work.md` poin 3).
 
-Tinjauan literatur pada §2.1 menunjukkan tiga hal: (1) kombinasi model YOLO kelas
-nano/tiny dengan DeepStream + TensorRT pada perangkat Jetson-class terbukti layak untuk
-deteksi objek ADAS real-time (§2.1.1), namun studi pembanding antar-generasi YOLO
-terbaru (termasuk model NMS-free seperti YOLO26n) pada Jetson Orin Nano spesifik masih
-terbatas; (2) akselerasi NMS melalui eksekusi paralel GPU terbukti secara konsisten
-mempercepat *post-processing* pada studi-studi sebelumnya (§2.1.2), namun studi tersebut
-memakai akselerator/kernel kustom, sementara penelitian ini menguji pendekatan yang
-lebih umum diterapkan di industri — plugin `EfficientNMS_TRT` bawaan vendor — sehingga
-hasil (termasuk potensi hasil negatif, lihat Bab IV §4.5) tetap merupakan kontribusi
-ilmiah yang sah karena menguji klaim akselerasi pada kondisi implementasi yang lebih
-realistis untuk pengembang aplikasi, dibanding menulis kernel CUDA dari nol; (3) tidak
-ditemukan studi yang membandingkan efisiensi komputasi algoritma *tracker*
-(feature-based vs. motion-only) secara spesifik pada pipeline DeepStream di perangkat
-Jetson Orin Nano — mengisi celah inilah yang menjadi kontribusi rumusan masalah ketiga,
-sebagai pengganti rumusan masalah DLA pada proposal awal yang tidak dapat dilaksanakan
-pada perangkat target akhir (lihat Bab I §1.1 dan §1.2).
+### 2.2.4 Model Deteksi
 
-Ketiga rumusan masalah pada Bab I — (1) kinerja real-time pipeline dasar, (2) efek
-EfficientNMS terhadap efisiensi pipeline, (3) efek pemilihan algoritma tracker terhadap
-efisiensi komputasi — dengan demikian saling melengkapi sebagai evaluasi bertahap
-terhadap satu pipeline DeepStream yang sama: dari performa dasar, ke satu titik
-optimasi spesifik (NMS), ke satu variabel desain lain yang memengaruhi *real-time
-budget* pipeline secara keseluruhan (tracker) — menjawab kebutuhan literatur akan studi
-*end-to-end* pada perangkat edge kelas *entry-level* (Jetson Orin Nano), bukan hanya
-perangkat kelas atas (Jetson AGX Orin) yang lebih umum diuji pada literatur ADAS
-existing.
+YOLO adalah keluarga arsitektur deteksi objek *single-stage* yang memprediksi *bounding box* dan
+kelas objek dalam satu kali *forward pass* jaringan, menjadikannya cocok untuk aplikasi
+*real-time* dibanding pendekatan *two-stage* (mis. Faster R-CNN). Penelitian ini menguji empat
+varian generasi YOLO kelas *nano/tiny* — dipilih karena kelas ukuran model yang setara (anggaran
+komputasi kira-kira sebanding), sehingga selisih hasil antar model lebih mencerminkan perbedaan
+arsitektur generasi ketimbang perbedaan skala model (`../../docs/01_scope_and_architecture.md`
+§1.4). Salah satu perbedaan arsitektural penting antar generasi ini adalah pendekatan terhadap
+NMS: sebagian model generasi baru (YOLOv10n, YOLO26n) bersifat *NMS-free* — tidak memerlukan
+tahap NMS terpisah karena model sudah dilatih untuk menghasilkan prediksi tanpa duplikasi (lihat
+catatan *parser* NMS-*free* di `../../docs/08_limitations_future_work.md`) — poin ini relevan
+untuk interpretasi hasil RM2 di Bab III, karena optimasi NMS (EfficientNMS, §2.5.2) secara
+inheren tidak berlaku sama untuk model NMS-*free*.
+
+| Model | Params | GFLOPs | Konfigurasi NMS | File config |
+|---|---|---|---|---|
+| YOLOv8n | 3.006.233 | 8,1 | NMS bawaan `nvinfer` (*baseline*) | `config/pgie_yolov8n_kitti.txt` |
+| YOLOv9t | 1.971.369 | 7,6 | NMS bawaan `nvinfer` (*baseline*) | `config/pgie_yolov9t_kitti.txt` |
+| YOLOv10n | 2.265.753 | 6,5 | NMS-*free* (arsitektural) | `config/pgie_yolov10n_kitti.txt` |
+| YOLO26n | 2.375.421 | 5,2 | NMS-*free* (arsitektural) | `config/pgie_yolov26n_kitti.txt` |
+| YOLOv8n + EfficientNMS | 3.006.233 | 8,1 | NMS paralel (`EfficientNMS_TRT`) | `config/pgie_yolov8n_kitti_efficientnms.txt` |
+| YOLOv9t + EfficientNMS | 1.971.369 | 7,6 | NMS paralel (`EfficientNMS_TRT`) | `config/pgie_yolov9t_kitti_efficientnms.txt` |
+
+Total 6 konfigurasi model di atas menjadi dasar 12 skenario RM3 (6 model × 2 *tracker*, §2.6.1
+poin 3). Perbandingan RM2 (NMS standar vs. paralel) hanya berlaku pada pasangan YOLOv8n/YOLOv9t
+(model dengan varian *baseline* dan EfficientNMS yang setara) — YOLOv10n dan YOLO26n tidak
+disertakan pada perbandingan RM2 karena keduanya sudah NMS-*free* secara arsitektural, sehingga
+tidak ada pasangan pembanding yang setara.
+
+Satu model tambahan, **YOLOv8n-COCO** (80 kelas, `config/pgie_yolov8n_coco.txt`), dipertahankan
+hanya sebagai *sanity-check* umum kebenaran *pipeline* (mis. memverifikasi *parser*/*rendering*
+berjalan benar di luar domain KITTI) — **bukan** kompetitor pada perbandingan akurasi/efisiensi
+utama (`../../docs/01_scope_and_architecture.md` §1.4).
+
+### 2.2.5 Konfigurasi Tracker
+
+| Tracker | File config | Karakteristik singkat (justifikasi lengkap: §2.5.3) |
+|---|---|---|
+| NvDCF | `config/tracker_nvdcf.yml` | *Feature-based*, pemrosesan piksel penuh, akurasi/*robustness* tertinggi |
+| NvSORT | `config/tracker_nvsort.yml` | *Motion-only* (Kalman filter + algoritma Hungarian), tanpa pemrosesan piksel, paling ringan |
+
+Baseline implementasi proyek ini menggunakan profil NvDCF (`../../docs/01_scope_and_architecture.md`
+§1.3), dengan kedua berkas konfigurasi di atas sudah tersedia di repositori proyek sejak awal
+implementasi. Kedua profil ini dipilih karena mewakili dua ujung spektrum efisiensi komputasi
+*tracker* yang tersedia di elemen `nvtracker` DeepStream — rincian justifikasi ilmiah pemilihan
+kedua profil ini (termasuk sitasi dokumentasi resmi NVIDIA) ada di §2.5.3, sebagai bagian dari
+perancangan sistem, bukan diulang di sini.
+
+### 2.2.6 Tooling Otomasi Pengujian
+
+- `scripts/build.sh` — kompilasi aplikasi C++ (`app`, `parser`/`src/log_parser.cpp`, *library*
+  `nvdsinfer_custom_impl_EfficientNMS`).
+- `scripts/run_benchmark.sh` — *harness* satu-*run*: menjalankan `app` dengan `--benchmark`
+  (menulis `fps.csv` per-*frame*), merekam `tegrastats` konkuren (diproses jadi
+  `hardware_analysis.csv`), dan mencatat metadata *run* ke `run_info.txt` (model, config,
+  *tracker*, mode input/output, durasi, `git_commit`, mode `nvpmodel`, status `jetson_clocks`,
+  *timestamp* mulai/selesai). Setiap *run* tersimpan di folder unik ber-*timestamp*
+  (`data/benchmark/<model>/<timestamp>/`) — **tidak pernah** menimpa hasil *run* sebelumnya.
+- `scripts/run_all_benchmark.sh` — orkestrasi otomatis 12 skenario (6 model × 2 *tracker*) secara
+  berurutan: memaksa `nvpmodel -m 0` + `jetson_clocks` di awal, menjalankan tiap skenario lewat
+  `run_benchmark.sh`, lalu jeda *cooldown* 60 detik + pembersihan cache (`sync` + `drop_caches`)
+  antar skenario untuk stabilisasi termal.
+- `scripts/prepare_eval_video.sh` dan `utils/eval_map/eval_deepstream_map.py` — infrastruktur
+  pendukung verifikasi akurasi *as-deployed* FP16 (lihat status implementasi di §2.6.1 poin 4).
+
+## 2.3 Tahapan Penelitian
+
+Penelitian ini merupakan penelitian **eksperimental kuantitatif** yang membandingkan kinerja
+konfigurasi *pipeline* deteksi-dan-*tracking* objek secara berpasangan (*baseline* vs.
+*optimized*) pada instrumen dan kondisi pengujian yang dikontrol seketat mungkin — perangkat
+keras yang sama (Jetson Orin Nano, §2.2.1), video input yang sama, mode daya yang sama
+(`nvpmodel -m 0` + `jetson_clocks`), dan *harness* pengukuran yang sama (§2.2.6) untuk seluruh
+skenario. Pendekatan ini dipilih karena ketiga rumusan masalah (`BAB-1-Pendahuluan.md` §1.2) pada
+dasarnya menanyakan **efek dari mengganti satu komponen *pipeline*** terhadap kinerja
+*real-time*, sehingga desain perbandingan terkontrol (bukan survei atau studi kualitatif) adalah
+yang paling sesuai. Penelitian memiliki tiga sumbu eksperimen independen, masing-masing menjawab
+satu rumusan masalah: (1) karakterisasi *baseline* (RM1), (2) *post-processing* NMS standar vs.
+paralel (RM2), dan (3) *tracking* NvDCF vs. NvSORT (RM3, dibatasi pada efisiensi komputasi saja
+— lihat `BAB-1-Pendahuluan.md` §1.5 poin 5 dan §2.5.3). Karena model yang dipakai adalah model
+*pre-trained* (bukan dilatih ulang), akurasi deteksi bukan variabel yang dioptimasi; akurasi
+hanya diperiksa sebagai *sanity check* pendukung (§2.6.1 poin 4).
+
+Tahapan penelitian dilaksanakan secara bertahap sebagai berikut:
+
+1. **Persiapan lingkungan** — *build* aplikasi (`scripts/build.sh`); verifikasi *engine*
+   TensorRT (`.onnx_b1_gpu0_fp16.engine`) berhasil dibangun otomatis oleh `nvinfer` pada
+   eksekusi pertama tiap model (spesifik perangkat/versi TensorRT — dihapus ulang bila
+   berpindah perangkat).
+2. **Definisi kriteria *real-time*** (§2.6.2) — ditetapkan sebelum pengujian dimulai, supaya
+   analisis hasil (Bab III) tidak menyesuaikan ambang batas setelah melihat data.
+3. **Pengukuran *baseline* (RM1)** — jalankan `scripts/run_benchmark.sh` untuk keempat model
+   *baseline* (YOLOv8n, YOLOv9t, YOLOv10n, YOLO26n) dengan *tracker default* (NvDCF), video
+   input tetap (`data/input/video_testing.mp4`), ukur FPS dan latensi per-komponen dari
+   `fps.csv`.
+4. **Pengukuran optimasi NMS paralel (RM2)** — jalankan `scripts/run_benchmark.sh` untuk varian
+   EfficientNMS (YOLOv8n, YOLOv9t), bandingkan terhadap hasil langkah 3 pada pasangan model yang
+   sama (kondisi lain tetap identik).
+5. **Verifikasi akurasi *as-deployed* FP16** (pendukung, lihat status §2.6.1 poin 4) — dump
+   deteksi mentah `NvDsObjectMeta` per model via `--dump-detections`, hitung mAP dengan
+   `utils/eval_map/eval_deepstream_map.py`, bandingkan terhadap *proxy* FP32
+   (`../../docs/05_accuracy_results.md`).
+6. **Pengukuran efisiensi komputasi *tracking* (RM3)** — jalankan `scripts/run_all_benchmark.sh`
+   (12 skenario penuh: 6 model × 2 *tracker*), kumpulkan `fps.csv` dan `hardware_analysis.csv`
+   tiap skenario.
+7. **Analisis dan perbandingan** — agregasi seluruh hasil (*baseline*, NMS, *tracker*, akurasi
+   pendukung) terhadap kriteria evaluasi (§2.6.2), disusun jadi tabel/grafik untuk Bab III.
+
+Sesuai rekomendasi protokol *benchmark* (`../../docs/04_benchmark_protocol.md`), setiap skenario
+diulang **5 repetisi** dengan jeda *cooldown* 60 detik antar repetisi/skenario (stabilisasi
+termal), dan 10 detik awal tiap *run* (*warm-up*) dibuang saat agregasi (lihat kondisi eksekusi
+aktual di `BAB-3-Hasil-dan-Pembahasan.md` §3.1).
+
+## 2.4 Teknik Pengumpulan Data
+
+Data dikumpulkan secara otomatis melalui dua kanal instrumentasi yang berjalan bersamaan selama
+setiap *run*, keduanya dirancang agar **tidak membebani jalur komputasi kritis** yang sedang
+diukur (arsitektur *threading* lengkap ada di §2.5.4):
+
+1. **Data performa *runtime*** — *throughput* (FPS) dan latensi *end-to-end* maupun latensi
+   per-komponen *pipeline* (`Lat_PreMux_ms`, `Lat_Mux_ms`, `Lat_Infer_ms`, `Lat_Tracker_ms`,
+   `Lat_PreOSD_ms`, `Lat_OSD_ms`, `Lat_Output_ms`) diambil melalui *pad probe* GStreamer yang
+   dipasang pada elemen-elemen kunci *pipeline* (lihat §2.5.1), dicatat ke berkas `fps.csv`
+   per-*frame* (`../../docs/04_benchmark_protocol.md`).
+2. **Data hardware** — utilisasi GPU (%), CPU per-*core* (%), RAM, dan konsumsi daya per-*rail*
+   diambil dari utilitas bawaan Jetson Linux `tegrastats` (interval 1000 ms), diproses oleh
+   *parser* C++ (`src/log_parser.cpp`) menjadi berkas `hardware_analysis.csv`
+   (`../../docs/04_benchmark_protocol.md`). `tegrastats` dipilih dibanding `nvidia-smi` karena
+   `nvidia-smi` tidak tersedia di Jetson (arsitektur *driver* berbeda), sedangkan `tegrastats`
+   adalah utilitas bawaan resmi dengan *overhead* rendah yang mampu membaca *rail* daya *on-SoC*
+   langsung tanpa perangkat tambahan.
+3. **Data akurasi *as-deployed* FP16** (pendukung, §2.6.1 poin 4) — deteksi mentah
+   `NvDsObjectMeta` (kelas, *bounding box*, *confidence*) didump per-*frame* ke JSON Lines lewat
+   flag CLI `--dump-detections`, kemudian dikonversi ke format COCO-*results* dan dihitung mAP-nya
+   dengan `pycocotools.cocoeval.COCOeval` (`utils/eval_map/eval_deepstream_map.py`).
+
+Ketiga kanal di atas berjalan independen dari jalur render/inferensi utama: penulisan berkas CSV
+maupun JSON Lines dilakukan di *thread* terpisah lewat *queue non-blocking* (`GAsyncQueue`),
+bukan langsung di dalam *pad probe* itu sendiri, agar biaya I/O pencatatan data tidak ikut
+tercampur ke dalam metrik latensi yang sedang diukur — detail arsitektur *threading* ini
+dijelaskan di §2.5.4.
+
+## 2.5 Perancangan dan Implementasi Sistem
+
+### 2.5.1 Arsitektur Pipeline DeepStream
+
+Penelitian ini secara eksplisit membatasi diri pada *perception layer* ADAS — tahap deteksi dan
+*tracking* objek dari citra kamera — dan tidak mencakup lapisan prediksi, *planning*, maupun
+kontrol kendaraan (`../../docs/01_scope_and_architecture.md` §1.1 dan `BAB-1-Pendahuluan.md`
+§1.5). NVIDIA DeepStream adalah SDK untuk membangun aplikasi *streaming analytics* berbasis
+GStreamer yang dioptimalkan untuk perangkat keras NVIDIA, mencakup tahap *decode* video,
+inferensi *deep learning*, *object tracking*, hingga penggambaran hasil (*on-screen display*)
+dan *output* akhir dalam satu *pipeline* tunggal. Karakteristik kunci DeepStream yang relevan
+untuk penelitian ini adalah penggunaan *buffer* **NVMM (NVIDIA Memory Manager)**, yang
+memungkinkan seluruh tahap *pipeline* (*decode* → inferensi → *tracking* → *encode*) berjalan di
+memori GPU tanpa banyak *copy* data bolak-balik ke CPU (*zero-copy*) — lebih efisien untuk
+kebutuhan *real-time* pada SoC *embedded* dibanding *pipeline* OpenCV manual yang biasanya
+bolak-balik CPU↔GPU tiap tahap. Karakteristik ini menjadi alasan utama pemilihan DeepStream
+dibanding pipeline manual berbasis OpenCV + TensorRT/ONNXRuntime
+(`../../docs/01_scope_and_architecture.md` §1.4).
+
+```mermaid
+flowchart TD
+    A[Kamera ZED / File Video] --> B[nvstreammux - batching NVMM]
+    B --> C[nvinfer - Primary GIE / model YOLO]
+    C --> D[nvtracker - profil dipilih via --tracker]
+    D --> E[nvvideoconvert]
+    E --> F[nvdsosd - gambar bbox + label + FPS]
+    F --> G{Output Sink}
+    G --> H[RTSP Stream]
+    G --> I[Monitor lokal - nv3dsink]
+    G --> J[File MP4]
+
+    F -. pad probe .-> K[Benchmark Logger Thread - GAsyncQueue]
+    K --> L[fps.csv per frame]
+
+    C -. pad probe opsional .-> P[Detection Dump Thread - GAsyncQueue]
+    P --> Q["<model>_detections.jsonl (--dump-detections)"]
+
+    M[tegrastats] --> N[LogParser - C++]
+    N --> O[hardware_analysis.csv]
+```
+
+Implementasi ada di `src/main.cpp` (kelas `DeepStreamApplication`), mengikuti urutan pemanggilan
+`buildPipeline()`/`buildInput()`/`buildOutput()`, terdiri atas elemen `nvstreammux` (batching
+*frame* ke *buffer* NVMM), `nvinfer` (Primary GIE — inferensi model YOLO, §2.2.4), `nvtracker`
+(asosiasi ID objek antar *frame*, profil dipilih via §2.5.3), `nvvideoconvert`, dan `nvdsosd`
+(penggambaran *bounding box*), sebelum diteruskan ke *output sink* (RTSP, layar lokal, atau
+berkas MP4). Detail lengkap ada di `../../docs/01_scope_and_architecture.md` §1.2 dan §1.4.
+
+### 2.5.2 Integrasi Plugin EfficientNMS_TRT
+
+*Non-Maximum Suppression* (NMS) adalah algoritma *post-processing* yang menyaring kandidat
+*bounding box* hasil deteksi mentah suatu model, membuang *box* yang tumpang tindih (berdasarkan
+ambang *Intersection-over-Union*/IoU) dengan *box* lain yang memiliki skor keyakinan lebih tinggi
+untuk objek yang sama. Implementasi NMS standar (mis. *GreedyNMS*) bersifat sekuensial dan sering
+dieksekusi di CPU, sehingga berpotensi menjadi *bottleneck* pada *pipeline* inferensi *real-time*
+di perangkat *edge* — motivasi inilah yang mendasari berbagai penelitian akselerasi NMS yang
+dirujuk di `BAB-1-Pendahuluan.md` §1.1 sebagai dasar rumusan masalah #2.
+
+Penelitian ini mengimplementasikan optimasi NMS menggunakan plugin **`EfficientNMS_TRT`** bawaan
+TensorRT (lihat `../../utils/trt_efficientnms/README.md`), yang menyisipkan algoritma NMS sebagai
+bagian dari *graph* TensorRT itu sendiri sehingga dieksekusi penuh oleh kernel GPU tanpa *loop*
+NMS Python/CPU pada *engine* hasil, dan tanpa mengubah arsitektur ONNX/*engine* *baseline*
+(`EfficientNMS_TRT` dipasang sebagai *tail* tambahan yang bergantung pada *output* detektor).
+Pendekatan ini **berbeda** dari yang digambarkan pada diagram arsitektur proposal
+awal (kernel CUDA kustom dengan tahap *ParallelDispatch → Workers evaluasi pasangan IoU → Custom
+Map Kernel → ParallelReduce*) — proposal menggambarkan kernel paralel yang ditulis dari nol,
+sedangkan implementasi final memakai *plugin* siap pakai vendor. Perbedaan ini perlu dijelaskan
+secara konsisten pada Bab I, II, dan III (lihat anotasi terkait di `BAB-1-Pendahuluan.md` §1.2
+poin 2).
+
+Implementasi konkret melibatkan dua bagian: (1) *parser custom*
+`nvdsinfer_custom_impl_EfficientNMS` (`src/efficientnms_parser.cpp`) yang membaca *output*
+tambahan dari *tail node* `EfficientNMS_TRT` pada *engine* TensorRT, dan (2) berkas konfigurasi
+`nvinfer` khusus untuk kedua model yang mendukung varian ini (`config/pgie_yolov8n_kitti_efficientnms.txt`,
+`config/pgie_yolov9t_kitti_efficientnms.txt`, §2.2.4). Model YOLOv10n dan YOLO26n tidak
+memerlukan integrasi ini karena keduanya sudah *NMS-free* secara arsitektural (§2.2.4).
+
+### 2.5.3 Konfigurasi Multi-Object Tracking
+
+*Object tracking* pada *pipeline* video mengasosiasikan deteksi objek antar *frame* berurutan
+dengan sebuah ID unik, mengurangi efek *flicker* (objek terdeteksi lalu hilang sesaat akibat
+kegagalan deteksi sesaat, mis. karena *partial occlusion*) — lihat
+`../../docs/01_scope_and_architecture.md` §1.4. NVIDIA DeepStream menyediakan elemen `nvtracker`
+yang dapat dikonfigurasi dengan beberapa profil algoritma *tracking* melalui berkas YAML.
+Penelitian ini membandingkan dua profil yang mewakili ujung-ujung spektrum efisiensi komputasi
+(§2.2.5):
+
+- **NvDCF** (*Discriminative Correlation Filter*): *tracker* berbasis filter korelasi dengan
+  fitur visual yang dipelajari (*learned feature*), umumnya lebih akurat dalam mempertahankan
+  identitas objek pada kondisi oklusi parsial, namun membutuhkan komputasi lebih berat karena
+  proses ekstraksi fitur dan pencarian korelasi per objek per *frame*.
+- **NvSORT**: *tracker* klasik berbasis filter Kalman dan algoritma Hungarian untuk asosiasi data
+  (pendekatan SORT — *Simple Online and Realtime Tracking*), tanpa ekstraksi fitur visual
+  sehingga jauh lebih ringan secara komputasi dibanding pendekatan berbasis *deep/correlation
+  feature* seperti NvDCF, dengan kompromi pada ketahanan terhadap oklusi.
+
+Trade-off akurasi-vs-komputasi antara pendekatan *feature-based* (NvDCF) dan *motion-only*
+(NvSORT) inilah yang mendasari rumusan masalah #3 — namun sesuai `BAB-1-Pendahuluan.md` §1.5
+poin 5, penelitian ini **murni mengukur sisi efisiensi komputasi** (FPS, `Lat_Tracker_ms`,
+utilisasi *resource*) dan tidak mengukur sisi kualitas asosiasi ID (MOTA/IDF1/ID *switch*).
+
+Pembatasan ini bukan sekadar konsekuensi keterbatasan dataset, melainkan konsisten dengan
+definisi sumbu perbandingan yang sudah melekat pada desain kedua profil *tracker* itu sendiri.
+Dokumentasi resmi NVIDIA (*Gst-nvtracker* plugin manual, DeepStream SDK) menyatakan NvSORT "tidak
+melibatkan pemrosesan data piksel sama sekali" sehingga "efisien secara komputasi", sedangkan
+NvDCF memakai *visual tracker* berbasis *discriminative correlation filter* — yaitu pemrosesan
+fitur piksel per objek per *frame* (NVIDIA, DeepStream SDK Plugin Manual, bagian
+*Gst-nvtracker*). Postingan blog resmi NVIDIA Developer soal DeepStream SDK 6.2 juga secara
+eksplisit menempatkan NvSORT sebagai *"lightweight, CPU-only implementation but still
+competitively accurate"* dan NvDCF sebagai penghasil *"best accuracy and robustness"* lewat
+kombinasi *conventional ML* (DCF) dan *deep learning* (ReID) (Shin & Li, 2023) — mengonfirmasi
+bahwa sumbu akurasi-vs-komputasi ini memang didesain vendor sebagai *trade-off* yang sudah
+diketahui karakteristiknya secara kualitatif, bukan sesuatu yang perlu diukur ulang oleh
+penelitian ini untuk membuat pertanyaan "*tracker* mana yang lebih efisien secara komputasi"
+valid dijawab.
+
+Pendekatan mengevaluasi pilihan algoritma murni dari sisi biaya komputasi — dengan karakter
+akurasi/kualitas sudah diketahui dan tidak diukur ulang — juga punya preseden metodologis yang
+mapan di luar domain *tracking*: *benchmark* **MLPerf Mobile Inference Benchmark** (Janapa Reddi
+dkk., 2022) menetapkan pada setiap tugas pengujian sebuah ambang akurasi dan kualitas minimum
+sebagai syarat kelulusan tetap, sementara metrik yang secara eksplisit dibandingkan dan
+dilaporkan meningkat antar generasi submisi adalah latensi dan *throughput* — struktur yang
+serupa dengan penelitian ini, karena karakteristik akurasi setiap *tracker* sudah
+didokumentasikan kualitatif oleh vendor, dan kontribusi penelitian ini adalah mengkuantifikasi
+biaya komputasinya secara spesifik pada perangkat Jetson Orin Nano yang belum ada di literatur
+(`BAB-1-Pendahuluan.md` §1.1). Preseden ini relevan pula karena MLPerf Mobile secara khusus
+menyasar evaluasi performa pada perangkat *on-device*/*edge* dengan sumber daya terbatas —
+konteks yang sejalan dengan platform Jetson Orin Nano pada penelitian ini, alih-alih server
+kelas *datacenter*.
+
+Adapun ketidaktersediaan dataset ber-anotasi *track ID* berurutan tetap menjadi alasan pendukung
+(bukan alasan tunggal): metrik kualitas *tracking* (MOTA/IDF1/ID *switch*) secara struktural
+membutuhkan *ground truth* dengan *field* identitas objek yang konsisten antar *frame* (mis.
+*benchmark* KITTI Tracking, MOTChallenge MOT16/17/20), berbeda dari dataset deteksi *single-frame*
+seperti KITTI 2D Object Detection yang dipakai penelitian ini (kotak per *frame* tanpa *field* ID
+lintas-*frame*) — sehingga menambah metrik ini bukan sekadar menghitung ulang, melainkan
+membutuhkan dataset dan proses anotasi baru yang di luar ruang lingkup penelitian.
+
+### 2.5.4 Skema Threading Logging
+
+Menulis berkas CSV/JSON Lines langsung di dalam *pad probe* (jalur kritis *render* tiap *frame*)
+akan menambah *I/O latency* ke jalur yang sedang diukur, mencemari metrik yang seharusnya murni
+mengukur biaya komputasi *pipeline*. Untuk menghindari ini, *logger benchmark* dan *logger* dump
+deteksi (§2.4) dirancang berjalan pada *thread* terpisah dari *thread* utama GStreamer, memakai
+`GAsyncQueue` sebagai antrean *non-blocking*: *pad probe* hanya menyalin data mentah ke antrean
+(operasi yang sangat cepat) dan langsung mengembalikan kendali ke *pipeline*, sementara *thread*
+terpisah mengambil data dari antrean dan menuliskannya ke berkas secara asinkron. Dengan pola
+ini, proses pengukuran didesain untuk **tidak mengganggu metrik yang diukur** — prinsip yang
+sama dipakai baik pada *pad probe fps.csv* (§2.4 poin 1) maupun *pad probe* dump deteksi
+(`--dump-detections`, §2.6.1 poin 4).
+
+## 2.6 Skenario Pengujian dan Kriteria Evaluasi
+
+### 2.6.1 Skenario Pengujian
+
+1. **Baseline *pipeline* (RM1)** — empat model (YOLOv8n, YOLOv9t, YOLOv10n, YOLO26n), *tracker*
+   *default* NvDCF, video input tetap, ukur FPS keseluruhan dan latensi per-komponen
+   (`Lat_PreMux_ms`, `Lat_Mux_ms`, `Lat_Infer_ms`, `Lat_Tracker_ms`, `Lat_PreOSD_ms`,
+   `Lat_OSD_ms`, `Lat_Output_ms` dari `fps.csv`).
+2. **NMS standar vs. NMS paralel EfficientNMS (RM2)** — pasangan YOLOv8n/YOLOv9t *baseline* vs.
+   varian EfficientNMS, kondisi lain identik terhadap skenario 1. Fokus perbandingan pada
+   `Lat_Infer_ms` (tahap yang mencakup *post-processing* NMS) dan FPS keseluruhan.
+3. **Efisiensi komputasi *tracking* (RM3)** — jalankan `scripts/run_all_benchmark.sh` untuk 12
+   skenario (6 model × 2 konfigurasi *tracker*: NvDCF/NvSORT). Bandingkan `Lat_Tracker_ms`
+   (median & p95) dan `hardware_analysis.csv` (GPU%, CPU/*core*, RAM, daya) antar konfigurasi
+   *tracker*. **Tidak** mengukur kualitas/akurasi *tracking* (*ID switch*, MOTA/IDF1) — lihat
+   `BAB-1-Pendahuluan.md` §1.5 poin 5 dan §2.5.3.
+4. **Verifikasi akurasi *as-deployed* FP16 (pendukung, bukan bagian dari rumusan masalah inti)**
+   — mengukur mAP langsung dari keluaran `NvDsObjectMeta` *pipeline* DeepStream FP16 pada 1.010
+   gambar val KITTI yang sama, dibandingkan terhadap *proxy* FP32
+   (`../../docs/05_accuracy_results.md`), untuk memastikan tidak ada penurunan akurasi
+   tersembunyi akibat kuantisasi/*parsing custom* (`../../docs/03_deployment_pipeline.md` §3.4).
+
+   **Status implementasi (per 2026-08-14)**: infrastrukturnya **sudah selesai
+   diimplementasikan di kode** (`git log` — komit "feat: add as-deployed detection dump for
+   FP16 verification"):
+   - `--dump-detections <path>` (flag CLI baru di `src/main.cpp`, pola sama seperti
+     `--benchmark`) — probe di *src pad* `primary-inference` mendump `NvDsObjectMeta` mentah
+     (kelas, *bounding box*, *confidence*) per *frame* ke JSON Lines lewat *thread* async
+     terpisah (pola sama seperti *logger benchmark*, lihat §2.5.4).
+   - `scripts/prepare_eval_video.sh` — mengubah folder gambar val menjadi satu video *lossless*
+     (`ffmpeg`, `-crf 0`) + `manifest.csv` (pemetaan *frame index* → nama file → resolusi asli),
+     supaya bisa diputar lewat `--input file` yang sudah ada tanpa perlu membangun dukungan
+     *image-sequence* baru di *pipeline* C++.
+   - `utils/eval_map/eval_deepstream_map.py` — mengkonversi `manifest.csv` + hasil dump JSON
+     Lines menjadi format COCO-*results*, *rescale bbox* dari kanvas `nvstreammux` (1280×720)
+     balik ke resolusi gambar asli per *frame*, lalu menghitung mAP dengan
+     `pycocotools.cocoeval.COCOeval` (keseluruhan dan per kelas).
+
+   **Yang belum dilakukan**: (a) ekspor 1.010 gambar val + label dari *notebook* Kaggle ke
+   perangkat lokal/Jetson (`data/eval/kitti_val/{images/,labels/}`) — perlu memastikan *split*
+   yang diekspor **identik** dengan *split* yang menghasilkan angka Bab III (cek *seed*/`args.yaml`
+   di *notebook*, supaya perbandingan FP16 vs FP32 *apple-to-apple*); (b) eksekusi nyata di Jetson
+   untuk keempat model; (c) verifikasi visual *sanity-check* hasil *rescale bbox* sebelum angka
+   mAP dipercaya; (d) *update* `../../docs/05_accuracy_results.md` §5.6 dan
+   `../../docs/08_limitations_future_work.md` dengan hasil aktual. Karena statusnya
+   infrastruktur-siap-tapi-belum-dieksekusi, skenario ini ditulis di sini sebagai **rencana
+   pengujian pendukung**, bukan hasil yang sudah ada — hasil aktualnya baru bisa masuk Bab III
+   setelah langkah (a)-(d) selesai.
+
+### 2.6.2 Kriteria Evaluasi
+
+Dua kelompok metrik evaluasi dipakai, mengikuti pembagian pada proposal (§"Analisis dan
+Benchmarking") dan implementasi *tooling* yang sudah tersedia (§2.4): **kualitas deteksi**
+(*precision*, *recall*, mAP pada IoU *threshold* 0,5 dan rentang 0,5:0,95 — dihitung dengan
+`pycocotools.cocoeval.COCOeval` untuk hasil *as-deployed* FP16, dan `Ultralytics YOLO.val()`
+untuk *baseline* FP32-*proxy*) dan **performa runtime/hardware** (FPS, latensi *end-to-end* dan
+per-komponen, serta utilisasi GPU/CPU/RAM/daya).
+
+| Sumbu | Metrik | Kriteria |
+|---|---|---|
+| RM1 (*baseline*) | FPS keseluruhan | *Real-time* didefinisikan sebagai **throughput ≥ 30 FPS** (mengikuti konfigurasi *default* kamera ZED pada `scripts/run_benchmark.sh` dan standar ADAS *safety-critical* *perception layer*) |
+| RM1 (*baseline*) | Latensi *end-to-end* | Dilaporkan sebagai persentil **p95/p99**, bukan hanya rata-rata — supaya *outlier*/*jitter* (relevan untuk *safety-critical*, lihat `BAB-1-Pendahuluan.md` §1.1) tidak tersembunyi di balik rata-rata |
+| RM2 (NMS) | FPS & `Lat_Infer_ms` | Selisih (Δ) *baseline* vs. EfficientNMS pada pasangan model yang sama; peningkatan dianggap bermakna jika Δ konsisten di seluruh repetisi (bukan kebetulan *noise* satu *run*) |
+| RM3 (*tracker*) | FPS keseluruhan, `Lat_Tracker_ms` (median & p95), GPU%/CPU%/RAM/daya | **Murni efisiensi komputasi** — sesuai `BAB-1-Pendahuluan.md` §1.5 poin 5. **Tidak** ada ambang akurasi *tracking* (*ID switch*, MOTA/IDF1) yang perlu dipenuhi; ini konsisten dengan pendekatan MLPerf Mobile Inference Benchmark yang menjadikan akurasi ambang kelulusan tetap (bukan variabel dibandingkan) — lihat §2.5.3 |
+| Akurasi (pendukung, §2.6.1 poin 4) | mAP50, mAP50-95 (*as-deployed* FP16 vs. *proxy* FP32) | Bukan variabel dibandingkan antar model, melainkan **kriteria *sanity-check* pass/fail**: selisih diharapkan kecil (ambang pasti, mis. <1–2 poin, ditentukan penulis berdasarkan referensi literatur umum FP16-vs-FP32 setelah data aktual tersedia) |
+

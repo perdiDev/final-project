@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build a single academic .docx combining finished skripsi chapters (BAB I-III)."""
+"""Build a single academic .docx combining finished skripsi chapters (BAB I-IV)."""
+import os
 import re
 from docx import Document
 from docx.shared import Pt, Cm
@@ -8,13 +9,14 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-BUILD_DIR = "/home/perdidev/dev/final-project/skripsi/draft/_build"
-OUT_PATH = "/home/perdidev/dev/final-project/skripsi/draft/Skripsi-Gabungan-BAB-I-III.docx"
+BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT_PATH = os.path.join(os.path.dirname(BUILD_DIR), "Skripsi-Gabungan-BAB-I-IV.docx")
 
 CHAPTER_FILES = [
     f"{BUILD_DIR}/BAB-1.clean.md",
     f"{BUILD_DIR}/BAB-2.clean.md",
     f"{BUILD_DIR}/BAB-3.clean.md",
+    f"{BUILD_DIR}/BAB-4.clean.md",
 ]
 
 TOKEN_RE = re.compile(r"(\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`)")
@@ -177,7 +179,7 @@ def add_title_page(doc):
         doc.add_paragraph()
     p("ANALISIS OPTIMASI REAL-TIME PIPELINE NVIDIA DEEPSTREAM UNTUK APLIKASI "
       "ADAS BERBASIS EDGE DEVICE", size=16, bold=True, space_after=6)
-    p("(Naskah gabungan Bab I–III — draf untuk diperiksa dosen pembimbing)", size=11,
+    p("(Naskah gabungan Bab I–IV — draf untuk diperiksa dosen pembimbing)", size=11,
       italic=True, space_after=0)
     for _ in range(4):
         doc.add_paragraph()
@@ -339,50 +341,53 @@ VERIFICATION_NOTES = [
      "Penggantian rumusan masalah #3 (sumbu Deep Learning Accelerator/DLA → "
      "perbandingan efisiensi komputasi algoritma tracking NvDCF vs. NvSORT) pada "
      "Bab I §1.2, §1.3, dan §1.5 belum dikonfirmasi ke dosen pembimbing. Penulis "
-     "memilih melanjutkan penulisan draf terlebih dahulu, dengan rencana merevisi "
-     "pada bimbingan berikutnya apabila perubahan ini tidak disetujui."),
+     "memilih melanjutkan penulisan draf terlebih dahulu (hingga Bab IV selesai), "
+     "dengan rencana merevisi pada bimbingan berikutnya apabila perubahan ini tidak "
+     "disetujui."),
     ("Prioritas tinggi",
-     "Verifikasi akurasi as-deployed FP16 (Bab III §3.5 poin 4) baru selesai pada "
-     "tahap infrastruktur kode (probe dump deteksi, konversi video evaluasi, dan "
-     "skrip penghitungan mAP). Ekspor dataset validasi ke perangkat Jetson, eksekusi "
-     "pengujian yang sesungguhnya, dan pembaruan angka hasil belum dilakukan, "
-     "sehingga belum dapat dilaporkan pada Bab IV."),
+     "Verifikasi akurasi as-deployed FP16 (Bab III §3.4) baru selesai pada tahap "
+     "infrastruktur kode (probe dump deteksi, konversi video evaluasi, dan skrip "
+     "penghitungan mAP). Ekspor dataset validasi ke perangkat Jetson, eksekusi "
+     "pengujian yang sesungguhnya, dan pembaruan angka hasil belum dilakukan. Bab IV "
+     "(§4.1) sudah mencantumkan keterbatasan ini secara eksplisit, sehingga kesimpulan "
+     "terkait trade-off akurasi masih bersyarat pada proxy FP32 dan tidak diklaim "
+     "pasti."),
     ("Prioritas sedang",
-     "Identifikasi varian Jetson Orin Nano 4GB pada Bab II §2.2.7 diturunkan dari "
+     "Identifikasi varian Jetson Orin Nano 4GB pada Bab II §2.2.1 diturunkan dari "
      "pembacaan mode daya maksimum (nvpmodel -q), bukan dari inspeksi label fisik "
      "modul. Verifikasi independen (mis. lewat pembacaan device-tree perangkat) "
      "belum dilakukan."),
     ("Prioritas sedang",
      "Versi persis GStreamer, GLib, dan CUDA Toolkit yang terpasang pada perangkat "
-     "pengujian (Bab III §3.2.2) belum dicatat sebagai metadata reproducibility "
+     "pengujian (Bab II §2.2.2) belum dicatat sebagai metadata reproducibility "
      "(mis. lewat gst-inspect-1.0 --version, nvcc --version, dpkg -l)."),
     ("Prioritas sedang",
      "Hyperparameter pelatihan model pretrained (rasio split, seed, jumlah epoch, "
-     "ukuran batch, optimizer, augmentasi, sumber bobot pretrained — Bab III §3.2.3) "
+     "ukuran batch, optimizer, augmentasi, sumber bobot pretrained — Bab II §2.2.3) "
      "belum dipindahkan dari catatan proses pelatihan ke dokumentasi resmi proyek."),
     ("Prioritas sedang",
-     "Ambang selisih mAP FP16-vs-FP32 yang dianggap “dapat diabaikan” (Bab III §3.6) "
+     "Ambang selisih mAP FP16-vs-FP32 yang dianggap “dapat diabaikan” (Bab II §2.6.2) "
      "belum dikunci ke angka final — akan ditentukan berdasarkan referensi literatur "
      "setelah data aktual tersedia, untuk menghindari penyesuaian kriteria setelah "
      "melihat hasil. Ambang FPS target real-time sudah dikunci ke 30 FPS."),
     ("Prioritas rendah",
-     "Jumlah repetisi aktual tiap skenario pengujian yang benar-benar dijalankan pada "
-     "perangkat (Bab III §3.3) belum dicatat karena pengujian penuh di perangkat "
-     "belum dilaksanakan; protokol merekomendasikan 3–5 repetisi per skenario."),
+     "Nama laboratorium spesifik tempat pelaksanaan pengujian perangkat keras (Bab II "
+     "§2.1) belum dikonfirmasi penulis — belum tercatat secara eksplisit di dokumen "
+     "proyek mana pun."),
     ("Prioritas rendah",
      "Satu sitasi pada Daftar Pustaka proposal awal, yaitu Wu dkk. (2024, “Road "
      "object detection based on improved YOLOv8 for real-time traffic scenarios”, "
-     "Sensors 24(3), 1023), telah dihapus dari Bab II setelah verifikasi DOI melalui "
-     "Crossref menunjukkan bahwa rujukan tersebut sebenarnya milik artikel lain yang "
-     "tidak berkaitan. Sitasi ini tidak pernah dipakai sebagai rujukan substantif di "
-     "bagian mana pun pada naskah ini, namun tetap perlu disampaikan kepada dosen "
-     "pembimbing karena merupakan bagian dari Daftar Pustaka yang telah disetujui "
-     "pada seminar proposal."),
+     "Sensors 24(3), 1023), telah dihapus setelah verifikasi DOI melalui Crossref "
+     "menunjukkan bahwa rujukan tersebut sebenarnya milik artikel lain yang tidak "
+     "berkaitan. Sitasi ini tidak pernah dipakai sebagai rujukan substantif di bagian "
+     "mana pun pada naskah ini, namun tetap perlu disampaikan kepada dosen pembimbing "
+     "karena merupakan bagian dari Daftar Pustaka yang telah disetujui pada seminar "
+     "proposal."),
     ("Prioritas rendah",
-     "Tujuh sitasi pada Bab II §2.1.3 (Choi, Nigade, Zhang, Ruiz-Barroso, Suder, "
+     "Tujuh sitasi pada Bab I §1.1 (Choi, Nigade, Zhang, Ruiz-Barroso, Suder, "
      "Seyfipoor, Shah) masih dirangkum setingkat klaim tematik mengikuti proposal; "
-     "perlu dibaca ulang dari sumber aslinya apabila versi final Bab II membutuhkan "
-     "ringkasan metodologi/hasil yang lebih dalam per jurnal."),
+     "perlu dibaca ulang dari sumber aslinya apabila versi final membutuhkan ringkasan "
+     "metodologi/hasil yang lebih dalam per jurnal."),
 ]
 
 
@@ -403,13 +408,15 @@ def add_verification_appendix(doc):
         intro,
         "Daftar berikut merangkum butir-butir yang masih memerlukan verifikasi, "
         "pelengkapan data, atau konfirmasi pembimbing sebelum naskah gabungan ini "
-        "dapat dianggap final. Daftar ini sengaja dipisahkan dari isi Bab I–III "
-        "agar alur akademis pada bab-bab tersebut tetap terbaca sebagai naskah yang "
-        "sudah tuntas, sambil tetap menjaga transparansi mengenai bagian yang belum "
-        "diselesaikan (sesuai prinsip non-fabrikasi data pada proyek ini). Bab IV "
-        "(Hasil dan Pembahasan) dan Bab V (Kesimpulan dan Saran) belum disertakan pada "
-        "naskah ini karena keduanya menunggu hasil pengujian aktual di perangkat "
-        "Jetson Orin Nano dan baru akan disusun setelah data tersebut tersedia.",
+        "dapat dianggap final. Daftar ini sengaja dipisahkan dari isi Bab I–IV agar "
+        "alur akademis pada bab-bab tersebut tetap terbaca sebagai naskah yang sudah "
+        "tuntas, sambil tetap menjaga transparansi mengenai bagian yang belum "
+        "diselesaikan (sesuai prinsip non-fabrikasi data pada proyek ini). Naskah ini "
+        "sudah mencakup keempat bab (Pendahuluan, Metode Penelitian, Hasil dan "
+        "Pembahasan, serta Kesimpulan dan Saran) berdasarkan data eksekusi 60 run "
+        "benchmark aktual (6 model × 2 tracker × 5 repetisi) pada Jetson Orin Nano; "
+        "satu-satunya bagian hasil yang masih tertunda adalah verifikasi akurasi "
+        "as-deployed FP16 (lihat butir di bawah).",
     )
 
     for priority, note in VERIFICATION_NOTES:

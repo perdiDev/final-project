@@ -277,5 +277,25 @@ berikut:
 
 ## 1.6 Sistematika Penulisan
 
-TODO — biasanya berisi ringkasan 1 paragraf per BAB (BAB I–V), ditulis terakhir setelah
-seluruh draf BAB lain stabil, supaya ringkasannya akurat.
+Untuk memberikan gambaran menyeluruh mengenai isi laporan penelitian ini, sistematika
+penulisan disusun ke dalam empat bab sebagai berikut. **BAB I Pendahuluan** memuat latar
+belakang penelitian, rumusan masalah, tujuan penelitian, manfaat penelitian, serta batasan
+masalah yang membingkai ruang lingkup penelitian pada evaluasi kinerja *real-time*,
+optimasi NMS paralel berbasis TensorRT plugin (EfficientNMS), dan efisiensi komputasi
+algoritma *tracking* (NvDCF vs. NvSORT) pada *pipeline* Nvidia DeepStream di perangkat
+Jetson Orin Nano. **BAB II Metode Penelitian** menguraikan tempat dan waktu penelitian,
+benda uji dan alat (perangkat keras, perangkat lunak, dataset, model deteksi, konfigurasi
+*tracker*, serta *tooling* otomasi pengujian), tahapan penelitian, teknik pengumpulan
+data, rancangan dan implementasi sistem (termasuk landasan teknis DeepStream SDK,
+integrasi *plugin* EfficientNMS_TRT, dan konfigurasi *multi-object tracking*), serta
+skenario pengujian dan kriteria evaluasi yang dipakai untuk menjawab ketiga rumusan
+masalah. **BAB III Hasil dan Pembahasan** menyajikan hasil pengujian kinerja *baseline*
+*pipeline* (RM1), hasil pengujian optimasi NMS paralel (RM2), hasil pengujian efisiensi
+komputasi *tracking* (RM3), verifikasi akurasi *as-deployed* FP16 sebagai uji *sanity
+check*, serta pembahasan akhir yang meliputi analisis *trade-off* kecepatan-akurasi-energi
+dan keterbatasan sistem, seluruhnya berdasarkan data eksekusi 60 *run* pengujian (6 model
+× 2 *tracker* × 5 repetisi) pada Jetson Orin Nano. **BAB IV Kesimpulan dan Saran** menutup
+laporan dengan kesimpulan yang menjawab ketiga rumusan masalah/tujuan penelitian secara
+berurutan, serta saran tindak lanjut bagi penelitian selanjutnya, termasuk verifikasi
+akurasi FP16 *as-deployed*, pengukuran suhu SoC, eksplorasi optimasi lanjutan, dan
+perluasan skenario pengujian.
