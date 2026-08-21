@@ -10,6 +10,113 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-21 13:09 WITA — Sinkronkan BAB I & BAB II dengan naskah PDF menuju semhas
+
+Lanjutan sinkronisasi `draft/` ke `skripsi-sementara/SKRIPSI - PERDI MENUJU SEMHAS
+YOO.pdf` (lihat entri 2026-08-21 12:30 WITA di bawah untuk konteks/klarifikasi awal).
+Sumber acuan PDF: `extracted.txt` baris 380–784 (BAB I) dan 789–1033 (BAB II).
+
+- **`draft/BAB-1-Pendahuluan.md` ditulis ulang penuh.** Perubahan struktural utama:
+  (1) subbab baru §1.2 Landasan Teori disisipkan (9 sub-subbab: ADAS/*perception layer*,
+  *edge computing*, DeepStream SDK, arsitektur YOLO, *bbox*/IoU/NMS, MOT, algoritma
+  *tracking* DeepStream, TensorRT/kuantisasi, metrik evaluasi *real-time*) — disalin
+  verbatim dari PDF, diformat ulang ke Markdown (notasi matematika Unicode → notasi
+  teks/kode); (2) subbab lama digeser: Rumusan Masalah §1.2→§1.3, Tujuan §1.3→§1.4,
+  Manfaat §1.4→§1.5; (3) §1.5 Batasan Masalah + §1.6 Sistematika Penulisan (draf lama)
+  digabung jadi satu §1.6 Ruang Lingkup Penelitian (PDF tidak punya subbab Sistematika
+  Penulisan terpisah di BAB I); (4) tiga paragraf SOTA tambahan di §1.1 yang tidak ada
+  di PDF dihapus (sitasinya sudah relevan di §1.2.4/§1.2.5). Dua bug penomoran internal
+  PDF diperbaiki dan didokumentasikan via `[VERIFIKASI]`: rujukan "(§1.2)" → "(§1.3)"
+  untuk Rumusan Masalah, dan "Bab II §2.2.6" → "Bab II §2.5.5" untuk justifikasi
+  *tracker* (dicek ulang setelah BAB II selesai ditulis).
+- **`draft/BAB-2-Metode-Penelitian.md` ditulis ulang penuh**, mengikuti struktur PDF
+  yang lebih ringkas (§2.1 Tempat dan Waktu; §2.2 Instrumen Penelitian sebagai daftar
+  datar; §2.3 Tahapan Penelitian 8 langkah; §2.4 Teknik Pengambilan Dataset; §2.5
+  Perancangan dan Implementasi Sistem §2.5.1–§2.5.5; §2.6 Pengujian) sambil
+  mempertahankan detail teknis tergrounding dari draf restrukturisasi 2026-08-19
+  sebelumnya (tabel spesifikasi Jetson Orin Nano, tabel model/GFLOPs, tabel konfigurasi
+  *tracker*, sitasi dokumentasi resmi NVIDIA + preseden MLPerf Mobile) yang di PDF
+  hanya ditulis ringkas atau berupa *placeholder* gambar `[Gambar N: ...]`.
+  - Bug penomoran ganda "2.5.5" pada PDF (Implementasi MOT *dan* Pengujian sama-sama
+    diberi nomor 2.5.5) diperbaiki: bagian "Pengujian" diberi nomor baru §2.6.
+  - Paragraf pembuka §2.5 PDF ("...implementasi model terbaik ke dalam website
+    sistem... jalur pelatihan... jalur pengujian...") **sengaja tidak disalin** —
+    dinilai kontaminasi sisa skripsi lain (penelitian ini pakai model *pre-trained*,
+    tidak melatih ulang, tidak ada *website* — lihat `BAB-1-Pendahuluan.md` §1.6),
+    pola yang sama dengan kontaminasi Daftar Isi yang sudah dikonfirmasi sebelumnya.
+  - *Placeholder* `[Gambar N: ...]` dari PDF tidak disalin literal, ditandai
+    `[VERIFIKASI]` bila relevan (mengikuti pola `(Catatan Visual: ...)` di BAB III).
+  - Tanggal spesifik eksekusi eksperimen (19 Agustus 2026, 11:33–12:46 WITA, dari
+    `run_info.txt`) dipertahankan sebagai detail dalam rentang "Mei–Agustus 2026" versi
+    PDF di §2.1 — tidak bertentangan, tidak dihapus.
+- **Rujukan silang di `BAB-3-Hasil-dan-Pembahasan.md` dan `BAB-4-Kesimpulan-dan-Saran.md`
+  diperbarui** menyesuaikan penomoran baru BAB I/II: §2.2.1→§2.2, §2.2.4→§2.5.2,
+  §2.2.5→§2.5.5, §2.2.6→§2.6, §2.5.3(lama)→§2.5.5, §2.6.1/§2.6.2→§2.6 (dengan anotasi
+  poin bila perlu), §1.5→§1.6, §1.2–§1.3→§1.3–§1.4. Dicek dengan `grep` bahwa seluruh
+  rujukan `§2.x`/`§1.x` di keempat file BAB kini menunjuk ke subbab yang benar-benar
+  ada di draf hasil restrukturisasi.
+- *Front matter* (Ucapan Terima Kasih, Abstrak, Daftar Isi, Daftar Tabel/Gambar/
+  Lampiran/Istilah, Daftar Pustaka, Lampiran) tetap **tidak disentuh** sesuai instruksi
+  standing user — akan ditangani terpisah di Word.
+
+## 2026-08-21 12:30 WITA — Sinkronkan BAB III & BAB IV dengan naskah PDF menuju semhas
+
+Permintaan user: samakan isi `draft/` dengan
+`skripsi-sementara/SKRIPSI - PERDI MENUJU SEMHAS YOO.pdf` (diperlakukan sebagai sumber
+kebenaran terbaru untuk BAB I–IV; *front matter*, Daftar Pustaka, dan Lampiran di PDF
+tersebut milik skripsi mahasiswa lain — sengaja **tidak disentuh**, akan ditangani user
+sendiri secara terpisah di Word). Klarifikasi dikumpulkan lewat beberapa putaran
+`AskUserQuestion`: PDF menang untuk struktur/wording BAB I–IV; untuk angka
+`Lat_Tracker_ms` BAB III yang berbeda antara draf lama dan PDF, user mengonfirmasi angka
+PDF yang benar dan diminta diterapkan ke markdown.
+
+**Temuan kunci sebelum menulis apa pun** (dicek dulu, bukan dikarang): angka `Lat_Tracker_ms`
+di PDF (mis. YOLOv8n NvDCF 10,981/NvSORT 0,363) **sudah ada persis** di
+`eksperimen/runtime_summary.csv` kolom `avg_Lat_Tracker_ms` (rata-rata antar-5-repetisi per
+skenario) — cocok hingga 3 desimal. Draf lama `BAB-3-Hasil-dan-Pembahasan.md` §3.3.1
+sebelumnya memakai statistik berbeda (median dari seluruh *frame* gabungan, bukan rata-rata
+antar-*run*), menghasilkan angka rasio "10×–62×" yang berbeda dari PDF. **Tidak perlu
+regenerasi CSV/plot** — data sudah tersedia, hanya kolom agregasi yang perlu diselaraskan
+dengan yang dipakai PDF. Rasio yang benar (dari `avg_Lat_Tracker_ms`, dihitung ulang):
+YOLOv8n ~30×, YOLOv9t ~26×, YOLOv10n ~12×, YOLO26n ~32×, YOLOv8n+EfficientNMS ~29×,
+YOLOv9t+EfficientNMS ~32× — rentang keseluruhan **~12×–32×**, bukan "10×–62×".
+
+**File yang diubah:**
+
+- **draft/BAB-3-Hasil-dan-Pembahasan.md**: ditulis ulang penuh.
+  - Penomoran subbab digeser +1 mengikuti PDF (bagian pembuka "Kondisi Eksekusi..." yang
+    tadinya tanpa nomor kini jadi §3.1 eksplisit; §3.1→§3.2, §3.2→§3.3, §3.3→§3.4, §3.4→§3.5,
+    §3.5→§3.6), termasuk seluruh referensi silang `§3.x` di dalam teks.
+  - Tabel §3.4.1 (dulu §3.3.1, `Lat_Tracker_ms` NvDCF vs NvSORT): angka & label kolom diganti
+    dari "Median" (statistik pooled-frame lama) menjadi "rata-rata" (`avg_Lat_Tracker_ms`,
+    konsisten dengan PDF dan dengan tabel dekomposisi latensi §3.2.3 yang **sebenarnya sudah**
+    memakai angka rata-rata ini sejak draf lama — jadi ini juga memperbaiki inkonsistensi
+    internal draf lama sendiri). Kolom p95 per-*tracker* dihapus karena tidak tersedia pada
+    statistik rata-rata ini. Klaim rasio "10×–62×" → "~12×–32×".
+  - Tabel §3.2.1–§3.2.2 (dulu §3.1.1–§3.1.2, FPS & latensi *baseline*): kolom latensi
+    "median/p95/p99" (statistik pooled-frame) diganti "Average Latensi/Average P95" memakai
+    `avg_latency_ms`/`avg_p95_latency_ms` dari CSV, konsisten dengan PDF §3.2.2 — nilai baru:
+    YOLOv8n 273,35/329,10; YOLOv9t 457,67/536,32; YOLOv10n 247,48/299,46; YOLO26n 355,56/409,20
+    (dihitung ulang dari CSV, sama persis dengan PDF). Kolom "Ambang" ditambah di tabel FPS
+    (123%/72%/123%/119%) mengikuti format Tabel 3.2 PDF.
+  - Prosa terkait (§3.1.2 lama, YOLOv9t sebagai *outlier*) disesuaikan ke angka rata-rata baru
+    (selisih rata-rata↔P95 YOLOv9t ~78,7 ms vs ~52–56 ms model lain, dihitung ulang dari CSV).
+  - Tidak menyalin *placeholder* PDF yang belum terisi (`(Catatan Visual: ...)`,
+    `[Tabel 3.X: ...]`, teks literal "Kerjakan nanti di jetson") — tabel/prosa draf lokal yang
+    sudah lengkap & tergrounding tetap dipertahankan, hanya angka `Lat_Tracker_ms` dan latensi
+    *baseline* yang diselaraskan ke metode agregasi PDF.
+- **draft/BAB-4-Kesimpulan-dan-Saran.md**: §4.1 poin 3 — klaim "10× hingga 62×" diganti
+  "~12×–32×" mengikuti angka baru §3.4.1. Seluruh referensi silang `§3.x` ke BAB III
+  diperbarui mengikuti pergeseran nomor subbab di atas.
+
+**Belum dikerjakan** (lanjutan sesi ini): BAB I (`BAB-1-Pendahuluan.md`) dan BAB II
+(`BAB-2-Metode-Penelitian.md`) belum disinkronkan ke struktur PDF (PDF punya §1.2 Landasan
+Teori tersendiri dan §2.2 Instrumen Penelitian sebagai daftar datar, berbeda dari struktur
+draf lokal saat ini). *Front matter*, Daftar Pustaka, dan Lampiran sengaja tidak disentuh
+sesuai instruksi user.
+
+---
+
 ## 2026-08-19 16:20 WITA — Gabungkan BAB I–IV (lengkap) menjadi satu naskah docx
 
 Permintaan user: gabungkan skripsi yang sudah selesai (BAB I–IV, seluruhnya sudah terisi
