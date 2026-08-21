@@ -10,6 +10,31 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-21 16:29 WITA — Tambah diagram mermaid proses fusi graph EfficientNMS di BAB II §2.5.4
+
+- Menambahkan diagram mermaid kedua di §2.5.4, kali ini fokus ke **proses fusi graph**
+  (bukan posisi pipeline seperti diagram sebelumnya): dua fase build-time (parse ONNX →
+  temukan tensor internal pre-NMS `[1,8400,7]` → pasang node `EfficientNMS_TRT` via
+  TensorRT `INetworkDefinition` → build engine baru terpisah) dan runtime (engine hasil
+  fusi dieksekusi sebagai satu graph GPU per frame). Detail teknis digrounding ke
+  `../../utils/trt_efficientnms/README.md` (dibaca ulang penuh untuk verifikasi) — bentuk
+  tensor internal `[1,8400,7]`, empat output plugin standar (`num_detections`,
+  `detection_boxes`, `detection_scores`, `detection_classes`), dan penegasan bahwa ONNX +
+  engine baseline tidak diubah/ditimpa.
+- Nama method TensorRT Python API pada diagram (`network.add_plugin_v2`,
+  `builder.build_serialized_network`) dicek langsung terhadap kode
+  `../../utils/trt_efficientnms/build_efficientnms_engine.py` (baris 428, 465) — sesuai,
+  bukan tebakan pola umum, sehingga catatan `[VERIFIKASI]` awal dihapus setelah
+  dikonfirmasi.
+
+## 2026-08-21 16:12 WITA — Tambah diagram mermaid before/after EfficientNMS di BAB II §2.5.4
+
+- Menambahkan diagram mermaid *before/after* (baseline NMS sekuensial CPU vs.
+  EfficientNMS_TRT sebagai *tail node* paralel GPU dalam satu *graph* TensorRT) di
+  `draft/BAB-2-Metode-Penelitian.md` §2.5.4, atas permintaan user, mengikuti gaya diagram
+  pipeline yang sudah ada di §2.5.3. Diagram menegaskan bahwa perubahan terjadi di dalam
+  batas `nvinfer`, bukan menambah elemen *pipeline* GStreamer baru.
+
 ## 2026-08-21 13:09 WITA — Sinkronkan BAB I & BAB II dengan naskah PDF menuju semhas
 
 Lanjutan sinkronisasi `draft/` ke `skripsi-sementara/SKRIPSI - PERDI MENUJU SEMHAS

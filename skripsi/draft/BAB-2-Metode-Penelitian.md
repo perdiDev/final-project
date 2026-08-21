@@ -363,6 +363,98 @@ ke dalam *engine* inferensi, tanpa mengubah arsitektur ONNX/*engine baseline*
 (`EfficientNMS_TRT` dipasang sebagai *tail* tambahan yang bergantung pada *output*
 detektor).
 
+```mermaid
+flowchart LR
+    subgraph Baseline["Baseline - NMS bawaan nvinfer"]
+        direction LR
+        A1[Backbone + Head YOLO] --> A2["Raw output per anchor/box
+        (belum difilter)"]
+        A2 --> A3["NMS sekuensial
+        (post-processing CPU,
+        di luar TensorRT engine)"]
+        A3 --> A4[Box hasil akhir]
+    end
+
+    subgraph Optimized["Optimized - EfficientNMS_TRT"]
+        direction LR
+        B1[Backbone + Head YOLO] --> B2["Raw output per anchor/box
+        (belum difilter)"]
+        B2 --> B3["EfficientNMS_TRT
+        (tail node, satu graph TensorRT,
+        kernel paralel GPU)"]
+        B3 --> B4[Box hasil akhir]
+    end
+
+    A4 --> A5[nvtracker]
+    B4 --> B5[nvtracker]
+
+    style A3 fill:#f8d7da,stroke:#c0392b
+    style B3 fill:#d4edda,stroke:#27ae60
+```
+
+Diagram di atas menegaskan poin utama teks: EfficientNMS_TRT bukan komponen *pipeline*
+GStreamer tambahan, melainkan perubahan **di dalam batas `nvinfer`** — NMS berpindah dari
+tahap terpisah setelah *engine* (kotak merah, CPU, sekuensial) menjadi *tail node* yang
+menyatu di dalam satu *graph* TensorRT yang sama dengan *backbone*/*head* (kotak hijau,
+GPU, paralel). Elemen *pipeline* di hilir (`nvtracker` dst., §2.5.3) tidak berubah pada
+kedua varian.
+
+Diagram di atas menunjukkan **posisi** perubahan pada *pipeline*, namun belum menunjukkan
+**bagaimana** fusi tersebut sebenarnya terjadi. Perlu ditekankan bahwa fusi ini adalah
+proses **build-time** (satu kali, di luar *runtime pipeline*), dilakukan oleh
+`utils/trt_efficientnms/build_efficientnms_engine.py` menggunakan TensorRT Python API —
+**bukan** proses yang berjalan ulang tiap *frame*:
+
+```mermaid
+flowchart TB
+    subgraph BT["Build-time - sekali, offline (build_efficientnms_engine.py)"]
+        direction TB
+        O1(["yolov8n_kitti.onnx
+        backbone + head, TIDAK diubah"])
+        O1 -->|"1. parse graph ONNX"| O2["2. Temukan tensor internal pre-NMS
+        [1, 8400, 7] = x1,y1,x2,y2,
+        score_class0..2
+        (sebelum output baseline [1,8400,6])"]
+        O2 -->|"3. network.add_plugin_v2(...)"| O3["4. Pasang node EfficientNMS_TRT
+        pada TensorRT INetworkDefinition,
+        disambung langsung ke tensor internal itu"]
+        O3 -->|"5. builder.build_serialized_network(...)"| O4(["yolov8n_kitti_efficientnms.engine
+        engine BARU & terpisah - ONNX
+        dan engine baseline tetap utuh"])
+    end
+
+    subgraph RT["Runtime - per frame, di dalam nvinfer"]
+        direction LR
+        R1[Backbone + Head YOLO] -->|"tensor internal
+        (sudah menyatu,
+        tidak keluar-masuk host)"| R2["EfficientNMS_TRT
+        node plugin, kernel GPU"]
+        R2 --> R3["4 output plugin standar:
+        num_detections, detection_boxes,
+        detection_scores, detection_classes"]
+    end
+
+    O4 -.di-load nvinfer sbg satu engine.-> R1
+
+    style O3 fill:#fff3cd,stroke:#b8860b
+    style O4 fill:#d4edda,stroke:#27ae60
+    style R2 fill:#d4edda,stroke:#27ae60
+```
+
+Tiga hal yang ditegaskan diagram ini: (1) fusi dilakukan **sekali di build-time** terhadap
+*network definition* TensorRT, bukan operasi *runtime* — konsekuensinya, biaya penggabungan
+graph itu sendiri **tidak** menyumbang latensi *pipeline* saat pengujian berjalan
+(`BAB-2-Metode-Penelitian.md` §2.6, §2.5.4); (2) *node* plugin disambungkan ke **tensor
+internal** graph (bukan ke output akhir `[B,N,6]` baseline yang sudah difilter) — sehingga
+tensor pre-NMS `[1,8400,7]` tidak pernah keluar dari *engine*/tidak perlu transfer
+host↔device tambahan sebelum NMS dijalankan; (3) berkas ONNX sumber dan *engine baseline*
+**tidak disentuh** — hasil fusi disimpan sebagai *file engine* baru dan terpisah
+(`*_efficientnms.engine`), sehingga kedua varian (*baseline* dan EfficientNMS) tetap dapat
+dijalankan berdampingan untuk perbandingan (§2.6 skenario 2).
+
+Nama API pada diagram (`network.add_plugin_v2(...)`, `builder.build_serialized_network(...)`)
+dikonfirmasi sesuai kode aktual `build_efficientnms_engine.py` (baris 428 dan 465).
+
 `[VERIFIKASI]` Pendekatan ini **berbeda** dari yang digambarkan pada diagram arsitektur
 proposal awal (kernel CUDA kustom dengan tahap *ParallelDispatch → Workers evaluasi
 pasangan IoU → Custom Map Kernel → ParallelReduce*) — proposal menggambarkan kernel
