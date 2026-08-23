@@ -18,60 +18,64 @@
 
 ## 3.1 Kondisi Eksekusi dan Parameter Baseline
 
-*Pipeline* DeepStream (`src/main.cpp`) berhasil dikompilasi (`scripts/build.sh`) dan dijalankan
-penuh di Jetson Orin Nano untuk keenam konfigurasi model (`BAB-2-Metode-Penelitian.md` §2.5.2)
-dikombinasikan dengan kedua konfigurasi *tracker* (§2.5.5). Orkestrasi otomatis
-`scripts/run_all_benchmark.sh` menjalankan seluruh **12 skenario (6 model × 2 *tracker*) × 5
-repetisi = 60 *run*** secara berurutan tanpa intervensi manual di antara *run*, sesuai tahap 6
-metodologi (§2.3). Seluruh 60 *run* berhasil menghasilkan ketiga artefak yang diharapkan
-(`fps.csv`, `hardware_analysis.csv`, `run_info.txt`) di
-`data/benchmark/<model>_<tracker>/<timestamp>/` — tidak ada *run* yang gagal atau perlu diulang.
+*Pipeline* DeepStream berhasil dikompilasi dan dijalankan penuh di Jetson Orin Nano untuk
+keenam konfigurasi model (Bab II §2.5.2) dikombinasikan dengan kedua konfigurasi *tracker*
+(§2.5.5). Lapisan orkestrasi otomatis (§2.6) menjalankan seluruh **12 skenario (6 model × 2
+*tracker*) × 5 repetisi = 60 *run*** secara berurutan tanpa intervensi manual di antara *run*,
+sesuai tahap keenam metodologi (§2.3). Seluruh 60 *run* berhasil menghasilkan ketiga artefak
+pencatatan yang diharapkan — log performa per-*frame*, log utilisasi perangkat keras, dan
+metadata proses pengujian — masing-masing pada lokasi tersendiri yang tidak menimpa hasil
+sebelumnya; tidak ada *run* yang gagal atau perlu diulang.
 
-| Parameter | Nilai (dari `run_info.txt`) |
+| Parameter | Nilai |
 |---|---|
-| Commit kode | `5d04bed` (konsisten di seluruh 60 *run*) |
-| Video input | `data/input/video_testing.mp4` (identik di seluruh *run*, sesuai variabel terkontrol §4.1 `04_benchmark_protocol.md`) |
-| Mode output | `file` (encode MP4) |
-| Mode daya (`nvpmodel`) | `10W` (indeks mode 0) — satu-satunya mode performa tinggi yang tersedia pada varian Jetson Orin Nano 4GB (`BAB-2-Metode-Penelitian.md` §2.2); diaktifkan sekali di awal *batch* (`sudo nvpmodel -m 0`) sebelum ke-60 *run* |
-| `jetson_clocks` | Dikunci di awal *batch* (`sudo jetson_clocks`, dengan `set -e` — seluruh *script* akan berhenti di *run* pertama bila langkah ini gagal, sehingga status kunci pada 60 *run* berikutnya konsisten) |
-| Pengukuran latensi | `NVDS_ENABLE_LATENCY_MEASUREMENT=1` aktif otomatis di seluruh *run* |
-| Interval `tegrastats` | 1000 ms |
+| Versi kode sumber | Konsisten di seluruh 60 *run* (satu *commit* tunggal) |
+| Video input | Identik di seluruh *run*, sesuai variabel terkontrol pada protokol pengujian |
+| Mode keluaran | Berkas (*encode* MP4) |
+| Mode daya perangkat | 10 W — satu-satunya mode performa tinggi yang tersedia pada varian Jetson Orin Nano 4GB (Bab II §2.2); diaktifkan sekali di awal *batch* sebelum ke-60 *run* |
+| Penguncian *clock* perangkat | Dikunci di awal *batch* dengan mekanisme yang menghentikan seluruh proses pengujian pada *run* pertama bila langkah penguncian gagal, sehingga status kunci pada 60 *run* berikutnya terjamin konsisten |
+| Pengukuran latensi | Diaktifkan otomatis di seluruh *run* |
+| Interval pencuplikan utilitas pemantauan perangkat keras | 1.000 milidetik |
 | Rentang waktu eksekusi *batch* | 2026-08-19 11:33–12:46 WITA (± 72 menit, termasuk *cooldown* 60 detik antar-*run*) |
 
-**Catatan metodologis**: kolom `jetson_clocks_status` di dalam masing-masing `run_info.txt`
-mencatat galat *"Run this script as a root user"*. Ini **bukan** indikasi bahwa *clock* tidak
-terkunci — galat ini berasal dari pemeriksaan status (`jetson_clocks --show`, dipanggil tanpa
-`sudo` di dalam `scripts/run_benchmark.sh:314`) yang berjalan sebagai proses anak tanpa privilese
-root, terpisah dari langkah pengunci *clock* yang sesungguhnya (`sudo jetson_clocks`, dijalankan
-sekali di awal `run_all_benchmark.sh` dengan privilese root). Karena *script* memakai `set -e`,
-kegagalan pada langkah pengunci itu sendiri akan menghentikan seluruh *batch* di *run* pertama —
-sehingga 60 *run* yang berhasil selesai secara konsisten mengindikasikan langkah penguncian
-berhasil. Kelemahan pencatatan status ini (bukan kelemahan pengujian) dicantumkan sebagai catatan
-transparansi, bukan disembunyikan.
+**Catatan metodologis**: metadata pengujian pada masing-masing *run* mencatat galat izin akses
+pada kolom status penguncian *clock*. Ini **bukan** indikasi bahwa *clock* tidak terkunci —
+galat ini berasal dari pemeriksaan status yang berjalan sebagai proses anak tanpa privilese
+administratif, terpisah dari langkah pengunci *clock* yang sesungguhnya (dijalankan sekali di
+awal orkestrasi *batch* dengan privilese administratif penuh). Karena mekanisme orkestrasi
+otomatis menghentikan seluruh proses pada kegagalan langkah manapun, kegagalan pada langkah
+pengunci itu sendiri akan menghentikan seluruh *batch* di *run* pertama — sehingga 60 *run* yang
+berhasil selesai secara konsisten mengindikasikan langkah penguncian berhasil. Kelemahan
+pencatatan status ini (bukan kelemahan pengujian) dicantumkan sebagai catatan transparansi,
+bukan disembunyikan.
 
 Durasi setiap *run* individual relatif singkat (± 13–20 detik *wall-clock*, mengikuti panjang
-`video_testing.mp4`) karena berkas input diputar apa adanya tanpa batas durasi eksplisit
-(`--duration` tidak digunakan oleh `run_all_benchmark.sh`). Agregasi membuang 10 detik pertama
-setiap *run* sebagai *warm-up* (mengikuti rekomendasi `04_benchmark_protocol.md` §4.3), sehingga
-jumlah *frame* yang tersisa untuk statistik per skenario berkisar 633–1.399 *frame* (gabungan 5
-repetisi) — lebih sedikit dibanding rekomendasi klip 180 detik di protokol. Implikasi
-keterbatasan ini dibahas lebih lanjut di §3.6.2.
+video input) karena berkas input diputar apa adanya tanpa batas durasi eksplisit yang
+dikonfigurasi. Agregasi membuang 10 detik pertama setiap *run* sebagai *warm-up* (mengikuti
+rekomendasi protokol pengujian), sehingga jumlah *frame* yang tersisa untuk statistik per
+skenario berkisar 633–1.399 *frame* (gabungan 5 repetisi) — lebih sedikit dibanding rekomendasi
+klip 180 detik pada protokol. Implikasi keterbatasan ini dibahas lebih lanjut di §3.6.2.
 
-Data mentah 60 *run* diagregasi dengan `utils/benchmark_analysis/aggregate_runtime.py` menjadi
-`../eksperimen/runtime_summary.csv` (ringkasan per skenario, rata-rata antar-5-repetisi) dan
-`../eksperimen/runtime_per_run.csv` (data mentah per *run*, dipakai untuk uji signifikansi §3.3
-dan §3.4), ditambah grafik distribusi FPS (`../eksperimen/plots/fps_boxplot_by_model.png`,
-`fps_boxplot_by_tracker.png`). Data ini kemudian digabung dengan akurasi KITTI
-(`../../docs/05_accuracy_results.md`) oleh `utils/benchmark_analysis/tradeoff_analysis.py`
-menjadi `../eksperimen/tradeoff_summary.csv` dan grafik Pareto (`tradeoff_map_vs_fps.png`,
-`tradeoff_map_vs_power.png`), dipakai di §3.6.
+Data mentah 60 *run* diagregasi menjadi ringkasan per skenario (rata-rata antar-5-repetisi) dan
+data mentah per *run* (dipakai untuk uji signifikansi §3.3 dan §3.4), ditambah grafik distribusi
+FPS per model dan per *tracker*. Data ini kemudian digabung dengan hasil akurasi KITTI (§3.5.1)
+menjadi rangkuman *trade-off* dan grafik Pareto, dipakai di §3.6.
+
+```mermaid
+flowchart LR
+    A["12 skenario<br/>(6 model × 2 tracker)<br/>× 5 repetisi = 60 run"] --> B["Data mentah per-run<br/>(uji signifikansi §3.3, §3.4)"]
+    A --> C["Ringkasan per skenario<br/>(rata-rata antar-5-repetisi)"]
+    C --> D["Tabel & grafik runtime<br/>throughput, latensi, sumber daya<br/>(§3.2–§3.4)"]
+    E["Evaluasi akurasi KITTI<br/>(§3.5.1)"] --> F["Rangkuman trade-off &<br/>grafik Pareto (§3.6)"]
+    D --> F
+```
 
 ## 3.2 Hasil Pengujian Kinerja Baseline Pipeline (Menjawab RM1)
 
 ### 3.2.1 Analisis Throughput (FPS)
 
-Skenario *baseline* memakai *tracker default* NvDCF, sesuai `BAB-2-Metode-Penelitian.md` §2.6
-poin 1.
+Skenario *baseline* memakai *tracker default* NvDCF, sesuai skenario pengujian pertama pada
+Bab II §2.6.
 
 | Model | Avg FPS | Median FPS | Std FPS | Ambang (vs. 30 FPS) |
 |---|---|---|---|---|
@@ -81,7 +85,7 @@ poin 1.
 | YOLO26n | 65,66 | 65,45 | 1,02 | +119% |
 
 **Seluruh model *baseline* jauh melampaui ambang *real-time* 30 FPS**
-(`BAB-2-Metode-Penelitian.md` §2.6) — bahkan YOLOv9t yang paling lambat sekalipun mencapai
+(Bab II §2.6) — bahkan YOLOv9t yang paling lambat sekalipun mencapai
 rata-rata 51,52 FPS (± 72% di atas ambang). Pemenuhan ambang ini juga diverifikasi tidak hanya
 pada rata-rata, tetapi pada **setiap** dari 60 *run* individual (bukan hanya rata-rata skenario,
 agar *run* tunggal yang kebetulan lambat tidak tersembunyi di balik rata-rata):
@@ -109,12 +113,21 @@ mengejar akurasi lebih tinggi (§3.6.1) tanpa mengorbankan kepatuhan *real-time*
 varian EfficientNMS dan varian *tracker* NvSORT dibahas lebih lanjut masing-masing di §3.3 dan
 §3.4.
 
-**Catatan lingkup pengujian**: hasil di atas berasal dari protokol *file*-based terkontrol
-(`04_benchmark_protocol.md` §4.1) menggunakan `video_testing.mp4` yang identik di seluruh *run* —
-bukan dari kamera ZED *live* secara langsung. Keputusan ini disengaja (sumber video tetap agar
-setiap model "melihat" input yang identik, sehingga hasil antar-model benar-benar sebanding).
-Validasi tambahan pada aliran kamera ZED *live* belum dilakukan pada laporan ini dan dicatat
-sebagai pekerjaan lanjutan (`../../docs/08_limitations_future_work.md`).
+**Catatan lingkup pengujian**: hasil di atas berasal dari protokol berbasis berkas video
+terkontrol menggunakan satu video input yang identik di seluruh *run* — bukan dari kamera ZED
+*live* secara langsung. Keputusan ini disengaja (sumber video tetap agar setiap model "melihat"
+input yang identik, sehingga hasil antar-model benar-benar sebanding). Validasi tambahan pada
+aliran kamera ZED *live* belum dilakukan pada laporan ini dan dicatat sebagai pekerjaan lanjutan
+(§3.6.2).
+
+**Gambar 3.1** Distribusi FPS per model (seluruh *run*, kedua konfigurasi *tracker* digabung)
+
+![Distribusi FPS per model, digambarkan sebagai kotak-garis (boxplot) yang merangkum rentang, median, dan sebaran seluruh run per model](../eksperimen/plots/fps_boxplot_by_model.png)
+
+Grafik di atas memvisualkan sebaran FPS pada Tabel di atas dalam bentuk kotak-garis: keempat
+model *baseline* tampak terkumpul rapat di kisaran 65–68 FPS, sementara YOLOv9t menunjukkan
+sebaran dua-modus (*bimodal*) yang jauh lebih lebar — konsekuensi langsung dari interaksi
+model-*tracker* yang dibahas lebih rinci pada §3.4.2.
 
 ### 3.2.2 Analisis Latensi End-to-End
 
@@ -126,11 +139,11 @@ sebagai pekerjaan lanjutan (`../../docs/08_limitations_future_work.md`).
 | YOLO26n | 355,56 | 409,20 |
 
 Latensi *end-to-end* pada Tabel di atas sengaja dilaporkan sebagai rata-rata **P95** selain
-rata-rata keseluruhan, mengikuti kriteria evaluasi RM1 (`BAB-2-Metode-Penelitian.md` §2.6), agar
+rata-rata keseluruhan, mengikuti kriteria evaluasi RM1 (Bab II §2.6), agar
 *outlier*/*jitter* — relevan untuk aplikasi *safety-critical* seperti ADAS — tidak tersembunyi di
-balik rata-rata. **YOLOv9t adalah *outlier* yang konsisten dengan temuan akurasi T4**
-(`../../docs/05_accuracy_results.md` §5.4 poin 2, yang mencatat YOLOv9t sebagai model dengan
-*inference time* T4 paling lambat walau parameternya paling kecil). Di Jetson, pola ini terulang
+balik rata-rata. **YOLOv9t adalah *outlier* yang konsisten dengan temuan akurasi pada evaluasi GPU
+*cloud*** (§3.5.1, yang mencatat YOLOv9t sebagai model dengan waktu inferensi paling lambat pada
+GPU *cloud* walau parameternya paling kecil). Di Jetson, pola ini terulang
 dan makin nyata pada sisi latensi: rata-rata 457,67 ms dan rata-rata P95 536,32 ms — jauh di atas
 ketiga model lain (rata-rata 247,48–355,56 ms, rata-rata P95 299,46–409,20 ms). Selisih antara
 rata-rata dan P95 pada YOLOv9t (~78,7 ms) juga lebih besar dibanding model lain (~52–56 ms),
@@ -140,53 +153,60 @@ sekadar rata-rata rendah.
 
 ### 3.2.3 Dekomposisi Latensi Per-Komponen
 
-Rincian latensi per-komponen *pipeline* (rata-rata ms, dari `fps.csv`) mengurai kontribusi tiap
-elemen terhadap total latensi pada Tabel §3.2.2:
+Rincian latensi rata-rata per-komponen *pipeline* mengurai kontribusi tiap tahap terhadap total
+latensi pada Tabel §3.2.2:
 
-| Model | PreMux | Mux | Infer | Tracker | PreOSD | OSD | Output |
+| Model | Pra-*multiplexing* | *Multiplexing* | Inferensi | *Tracking* | Pra-OSD | OSD | *Output* |
 |---|---|---|---|---|---|---|---|
 | YOLOv8n | 213,84 | 14,09 | 19,21 | 10,98 | ~0,01 | 9,34 | 5,87 |
 | YOLOv9t | **360,92** | 27,48 | 28,65 | **18,93** | ~0,01 | 13,76 | 7,93 |
 | YOLOv10n | 205,36 | 10,11 | 16,72 | 3,53 | ~0,01 | 7,08 | 4,67 |
 | YOLO26n | 279,70 | 21,87 | 22,88 | 13,63 | ~0,01 | 10,95 | 6,52 |
 
+**Gambar 3.2** Dekomposisi latensi per-komponen, model *baseline* dengan *tracker* NvDCF
+
+![Diagram batang bertumpuk dekomposisi latensi tujuh tahap pipeline per model baseline](../eksperimen/plots/latency_decomposition_stacked_bar.png)
+
+Diagram batang bertumpuk di atas memvisualkan proporsi Tabel di atas: tahap pra-*multiplexing* secara
+konsisten mendominasi total latensi pada seluruh model, dengan kontribusinya pada YOLOv9t yang
+tampak jelas paling besar secara absolut dibanding ketiga model lain.
+
 Dua temuan utama menjelaskan *bottleneck* per-komponen:
 
-1. **`Lat_PreMux_ms` YOLOv9t (360,92 ms) jauh di atas model lain (~205–280 ms).**
-   `Lat_PreMux_ms` mengukur waktu tunggu *buffer* di *decoder*/*queue* sebelum masuk
-   `nvstreammux` (`../../docs/04_benchmark_protocol.md`); nilainya yang membengkak untuk YOLOv9t
-   kemungkinan besar adalah gejala *backpressure* dari tahap hilir yang lebih lambat (arsitektur
-   PGI/GELAN YOLOv9 yang lebih *sequential*, ditambah biaya NvDCF di tahap *tracking*) yang
-   merambat balik ke antrean di depan *muxer* — bukan *decoder* itu sendiri yang melambat. Dugaan
-   ini konsisten dengan pola di §3.4.1 (nilai `Lat_PreMux_ms` YOLOv9t turun ke ~206 ms, sejajar
-   model lain, begitu *tracker* diganti ke NvSORT).
+1. **Latensi tahap pra-*multiplexing* YOLOv9t (360,92 ms) jauh di atas model lain (~205–280 ms).**
+   Tahap ini mengukur waktu tunggu *buffer* di *decoder*/antrean sebelum masuk ke tahap *multiplexing*
+   aliran video (§2.5.3); nilainya yang membengkak untuk YOLOv9t kemungkinan besar adalah gejala
+   *backpressure* dari tahap hilir yang lebih lambat (arsitektur PGI/GELAN YOLOv9 yang lebih
+   *sequential*, ditambah biaya NvDCF di tahap *tracking*) yang merambat balik ke antrean di depan
+   tahap *multiplexing* — bukan *decoder* itu sendiri yang melambat. Dugaan ini konsisten dengan pola di
+   §3.4.1 (latensi pra-*multiplexing* YOLOv9t turun ke ~206 ms, sejajar model lain, begitu *tracker*
+   diganti ke NvSORT).
 2. **YOLO26n memiliki GFLOPs teoretis terendah (5,2) tetapi bukan model tercepat di Jetson**
-   (65,66 FPS, di bawah YOLOv8n dan YOLOv10n) — mengonfirmasi catatan
-   `../../docs/05_accuracy_results.md` bahwa GFLOPs teoretis tidak selalu berbanding lurus dengan
-   performa aktual pada perangkat *edge*; kepadatan komputasi memori/latensi *tracker* NvDCF
-   (13,63 ms untuk YOLO26n, kedua tertinggi setelah YOLOv9t) turut menyumbang. Diskusi lanjutan
-   tentang karakter NMS-*free* YOLO26n ada di §3.3.3.
+   (65,66 FPS, di bawah YOLOv8n dan YOLOv10n) — mengonfirmasi temuan pada evaluasi akurasi (§3.5.1)
+   bahwa GFLOPs teoretis tidak selalu berbanding lurus dengan performa aktual pada perangkat
+   *edge*; kepadatan komputasi memori/latensi *tracker* NvDCF (13,63 ms untuk YOLO26n, kedua
+   tertinggi setelah YOLOv9t) turut menyumbang. Diskusi lanjutan tentang karakter NMS-*free*
+   YOLO26n ada di §3.3.3.
 
 ## 3.3 Hasil Pengujian Optimasi NMS Paralel (Menjawab RM2)
 
 Perbandingan pasangan model dengan bobot identik, *tracker* NvDCF (kondisi lain sama dengan
-§3.2), sesuai `BAB-2-Metode-Penelitian.md` §2.6 (skenario pengujian poin 2). Uji signifikansi memakai Welch's
-*t*-test atas distribusi FPS 5 repetisi per skenario (`tradeoff_analysis.py --significance`).
+§3.2), sesuai skenario pengujian kedua pada Bab II §2.6. Uji signifikansi memakai Welch's
+*t*-test atas distribusi FPS 5 repetisi per skenario.
 
 ### 3.3.1 Dampak EfficientNMS terhadap Latensi Inferensi
 
-| Pasangan | `Lat_Infer_ms` *baseline* | `Lat_Infer_ms` EfficientNMS | Δ |
+| Pasangan | Latensi inferensi *baseline* (ms) | Latensi inferensi EfficientNMS (ms) | Δ |
 |---|---|---|---|
 | YOLOv8n | 19,21 | 18,97 | −0,24 ms |
 | YOLOv9t | 28,65 | 28,09 | −0,56 ms |
 
-Pada kedua model, `Lat_Infer_ms` (tahap yang mencakup *post-processing* NMS) sedikit membaik
+Pada kedua model, latensi tahap inferensi (yang mencakup *post-processing* NMS) sedikit membaik
 setelah EfficientNMS dipasang, namun selisihnya sangat kecil secara absolut. Ini konsisten dengan
-catatan `utils/trt_efficientnms/README.md` §"Batas optimasi dan alternatif" bahwa biaya
-`EfficientNMS_TRT` itu sendiri sudah sangat murah (~0,05 ms) pada TensorRT 10.3 untuk YOLOv8n
-*batch* 1 — implementasi NMS standar `nvinfer` yang dipakai *baseline* bukanlah *bottleneck*
-besar untuk mulai dengan, sehingga ada sedikit "ruang" yang bisa dioptimasi pada tahap inferensi
-itu sendiri.
+pengukuran mandiri terhadap biaya operasi NMS paralel berbasis *plugin* itu sendiri, yang
+menunjukkan biayanya sudah sangat murah (~0,05 ms pada TensorRT 10.3 untuk YOLOv8n *batch* 1) —
+implementasi NMS standar yang dipakai *baseline* bukanlah *bottleneck* besar untuk mulai dengan,
+sehingga ada sedikit "ruang" yang bisa dioptimasi pada tahap inferensi itu sendiri.
 
 ### 3.3.2 Dampak EfficientNMS terhadap Throughput Keseluruhan
 
@@ -200,38 +220,37 @@ YOLOv9t 457,67 ms (*baseline*) vs. 468,26 ms (EfficientNMS).
 
 Pada YOLOv8n, tidak ada perbedaan FPS yang signifikan secara statistik. Pada YOLOv9t, sebaliknya,
 perbedaan FPS justru **signifikan namun berlawanan arah dari yang diharapkan** — EfficientNMS
-lebih lambat, bukan lebih cepat. Karena `Lat_Infer_ms` itu sendiri hampir tidak berubah (§3.3.1),
-penurunan FPS pada YOLOv9t bukan berasal dari biaya *plugin* NMS itu sendiri, melainkan dari
-interaksi dengan tahap lain. Hasil ini adalah **temuan negatif yang sah secara ilmiah**, bukan
-kegagalan implementasi, dan dapat dijelaskan oleh tiga faktor — seluruhnya berdasar pada
-dokumentasi teknis proyek ini (`utils/trt_efficientnms/README.md`):
+lebih lambat, bukan lebih cepat. Karena latensi tahap inferensi itu sendiri hampir tidak berubah
+(§3.3.1), penurunan FPS pada YOLOv9t bukan berasal dari biaya operasi NMS paralel itu sendiri,
+melainkan dari interaksi dengan tahap lain. Hasil ini adalah **temuan negatif yang sah secara
+ilmiah**, bukan kegagalan implementasi, dan dapat dijelaskan oleh tiga faktor:
 
-1. **Biaya `EfficientNMS_TRT` itu sendiri sudah sangat kecil** (§3.3.1), sehingga ruang optimasi
+1. **Biaya operasi NMS paralel itu sendiri sudah sangat kecil** (§3.3.1), sehingga ruang optimasi
    dari sisi *plugin* NMS memang terbatas sejak awal.
-2. **`EfficientNMS_TRT` adalah *tail* yang dependen pada *output* detektor** — ia tidak berjalan
+2. **Operasi NMS paralel adalah *tail* yang dependen pada *output* detektor** — ia tidak berjalan
    bersamaan (*concurrent*) dengan komputasi *backbone* untuk *frame* yang sama. Karakteristik
    *sequential*/tidak-*overlapping* ini kemungkinan mengurangi kesempatan *pipelining* GPU antar
    *frame*, yang konsisten dengan turunnya rata-rata pemakaian GPU pada YOLOv9t+EfficientNMS
    (69,3%, turun dari 87,7% pada *baseline*, lihat §3.4.3) meski FPS-nya juga turun — indikasi
    *bubble*/*idle* GPU yang lebih besar, bukan GPU yang lebih sibuk.
-3. **Perbaikan `Lat_Infer_ms` semata tidak otomatis menaikkan FPS** bila tahap lain
-   (`Lat_Tracker_ms`, `Lat_PreMux_ms`) menjadi *bottleneck* yang lebih dominan — persis kondisi
-   YOLOv9t (§3.2.3), di mana `Lat_Infer_ms` nyaris tidak berubah tetapi FPS turun karena
+3. **Perbaikan latensi inferensi semata tidak otomatis menaikkan FPS** bila tahap lain (tahap
+   *tracking* atau tahap pra-*multiplexing*) menjadi *bottleneck* yang lebih dominan — persis kondisi
+   YOLOv9t (§3.2.3), di mana latensi inferensi nyaris tidak berubah tetapi FPS turun karena
    interaksi dengan *tail latency* di tahap lain.
 
-Sesuai rekomendasi `utils/trt_efficientnms/README.md` §"Batas optimasi dan alternatif", peluang
-optimasi lanjutan yang lebih menjanjikan untuk kasus ini bukan pada *plugin* NMS itu sendiri,
-melainkan pada `score-threshold`/`max-output-boxes` yang lebih agresif (bila mAP masih dalam
-toleransi) atau model dengan *head* NMS-*free* — dibahas pada §3.3.3.
+Peluang optimasi lanjutan yang lebih menjanjikan untuk kasus ini bukan pada *plugin* NMS paralel
+itu sendiri, melainkan pada penyesuaian ambang keyakinan (*confidence*) dan batas jumlah
+*bounding box* keluaran yang lebih agresif (bila mAP masih dalam toleransi) atau model dengan *head* NMS-*free*
+— dibahas pada §3.3.3.
 
 ### 3.3.3 Pembahasan Model NMS-free
 
-YOLOv10n dan YOLO26n (`BAB-2-Metode-Penelitian.md` §2.5.2) tidak disertakan pada perbandingan RM2
-di atas karena keduanya sudah *NMS-free* secara arsitektural — tidak ada pasangan *baseline*
-vs. EfficientNMS yang setara untuk dibandingkan. Namun demikian, hasil *baseline* di §3.2.1 dan
-§3.2.3 tetap relevan untuk menilai apakah pendekatan arsitektural NMS-*free* memberi keuntungan
-runtime dibanding model dengan NMS terpisah: YOLOv10n mencatat FPS tertinggi di antara keempat
-model *baseline* (67,02) dengan `Lat_Infer_ms` terendah (16,72 ms), sedangkan YOLO26n — meski
+YOLOv10n dan YOLO26n (Bab II §2.5.2) tidak disertakan pada perbandingan RM2 di atas karena
+keduanya sudah *NMS-free* secara arsitektural — tidak ada pasangan *baseline* vs. EfficientNMS
+yang setara untuk dibandingkan. Namun demikian, hasil *baseline* di §3.2.1 dan §3.2.3 tetap
+relevan untuk menilai apakah pendekatan arsitektural NMS-*free* memberi keuntungan runtime
+dibanding model dengan NMS terpisah: YOLOv10n mencatat FPS tertinggi di antara keempat model
+*baseline* (67,02) dengan latensi inferensi terendah (16,72 ms), sedangkan YOLO26n — meski
 memiliki GFLOPs teoretis terendah (5,2) — hanya mencapai 65,66 FPS, di bawah YOLOv8n dan YOLOv10n
 (§3.2.3 poin 2). Dengan kata lain, **karakter NMS-*free* tidak secara otomatis menjamin
 *throughput* tertinggi** pada level *pipeline* lengkap — faktor lain seperti kepadatan komputasi
@@ -240,22 +259,22 @@ memiliki GFLOPs teoretis terendah (5,2) — hanya mencapai 65,66 FPS, di bawah Y
 Temuan ini melengkapi hasil RM2: bagi model kelas *nano/tiny* pada Jetson Orin Nano, pendekatan
 menghilangkan NMS secara arsitektural (seperti pada YOLOv10n/YOLO26n) dan pendekatan
 mempercepat NMS lewat *plugin* paralel (EfficientNMS pada YOLOv8n/YOLOv9t) sama-sama **tidak**
-memberi jaminan otomatis atas peningkatan *throughput* yang besar — pada kelas model ini,
-`Lat_Infer_ms` (termasuk NMS di dalamnya) bukan komponen *bottleneck* dominan dibanding
-`Lat_PreMux_ms` dan `Lat_Tracker_ms` (§3.2.3, §3.4.1).
+memberi jaminan otomatis atas peningkatan *throughput* yang besar — pada kelas model ini, latensi
+tahap inferensi (termasuk NMS di dalamnya) bukan komponen *bottleneck* dominan dibanding latensi
+tahap pra-*multiplexing* dan tahap *tracking* (§3.2.3, §3.4.1).
 
 ## 3.4 Hasil Pengujian Efisiensi Komputasi Tracking (Menjawab RM3)
 
-Skenario ini adalah inti rumusan masalah #3 (`BAB-2-Metode-Penelitian.md` §2.6 (skenario pengujian poin 3)):
+Skenario ini adalah inti rumusan masalah #3 (skenario pengujian ketiga pada Bab II §2.6):
 membandingkan **efisiensi komputasi** (bukan kualitas *tracking*) NvDCF vs. NvSORT di keenam
-model, masing-masing 5 repetisi (total 60 *run*, lihat bagian pembuka bab ini). Statistik
-`Lat_Tracker_ms` di bawah dihitung sebagai rata-rata antar-5-repetisi per skenario
-(`avg_Lat_Tracker_ms`, `../eksperimen/runtime_summary.csv`), konsisten dengan cara agregasi yang
-sama dipakai pada seluruh tabel latensi lain di bab ini (§3.2.2, §3.2.3).
+model, masing-masing 5 repetisi (total 60 *run*, lihat bagian pembuka bab ini). Statistik latensi
+tahap *tracking* di bawah dihitung sebagai rata-rata antar-5-repetisi per skenario, konsisten
+dengan cara agregasi yang sama dipakai pada seluruh tabel latensi lain di bab ini (§3.2.2,
+§3.2.3).
 
 ### 3.4.1 Perbandingan Latensi Tracker (NvDCF vs. NvSORT)
 
-**Tabel 3.4.1** `Lat_Tracker_ms` rata-rata (antar-5-repetisi per skenario)
+**Tabel 3.4.1** Latensi tahap *tracking* rata-rata (antar-5-repetisi per skenario)
 
 | Model | NvDCF (ms) | NvSORT (ms) | Rasio Percepatan (NvDCF/NvSORT) |
 |---|---|---|---|
@@ -266,14 +285,22 @@ sama dipakai pada seluruh tabel latensi lain di bab ini (§3.2.2, §3.2.3).
 | YOLOv8n+EfficientNMS | 11,650 | 0,401 | ~29× |
 | YOLOv9t+EfficientNMS | 20,787 | 0,644 | ~32× |
 
-**Biaya komputasi `Lat_Tracker_ms` NvDCF secara konsisten ~12×–32× lebih tinggi daripada NvSORT,
-di seluruh enam model** — sejalan dengan karakteristik arsitektural keduanya
-(`BAB-2-Metode-Penelitian.md` §2.5.5): NvDCF melakukan ekstraksi fitur berbasis piksel
-penuh per objek, sedangkan NvSORT murni berbasis gerak (*Kalman filter* + algoritma Hungarian)
-tanpa pemrosesan piksel. Ini adalah hasil yang **tidak bergantung pada model deteksi** — pola
-yang sama muncul baik pada model *nano*-class ringan (YOLOv10n, rasio terendah ~12×) maupun yang
-lebih berat (YOLOv9t/YOLO26n, rasio ~26–32×); rasio terendah pada YOLOv10n konsisten dengan biaya
-`Lat_Tracker_ms` NvDCF absolutnya yang juga paling rendah (3,530 ms) di antara keenam model.
+**Gambar 3.4** Latensi tahap *tracking* rata-rata: NvDCF vs. NvSORT (skala logaritmik)
+
+![Diagram batang berkelompok latensi tahap tracking NvDCF dibandingkan NvSORT pada skala logaritmik, keenam model](../eksperimen/plots/tracker_latency_comparison.png)
+
+Skala logaritmik pada sumbu-y sengaja dipakai agar selisih puluhan-kali-lipat pada Tabel di
+atas tetap terbaca proporsional dalam satu grafik — batang NvSORT tampak nyaris rata di dasar
+grafik pada skala linear biasa, padahal nilainya tetap bervariasi antar model.
+
+**Biaya komputasi latensi tahap *tracking* NvDCF secara konsisten ~12×–32× lebih tinggi daripada
+NvSORT, di seluruh enam model** — sejalan dengan karakteristik arsitektural keduanya (Bab II
+§2.5.5): NvDCF melakukan ekstraksi fitur berbasis piksel penuh per objek, sedangkan NvSORT murni
+berbasis gerak (*Kalman filter* + algoritma Hungarian) tanpa pemrosesan piksel. Ini adalah hasil
+yang **tidak bergantung pada model deteksi** — pola yang sama muncul baik pada model *nano*-class
+ringan (YOLOv10n, rasio terendah ~12×) maupun yang lebih berat (YOLOv9t/YOLO26n, rasio ~26–32×);
+rasio terendah pada YOLOv10n konsisten dengan biaya latensi *tracking* NvDCF absolutnya yang juga
+paling rendah (3,530 ms) di antara keenam model.
 
 ### 3.4.2 Dampak Algoritma Tracking terhadap FPS
 
@@ -288,8 +315,16 @@ lebih berat (YOLOv9t/YOLO26n, rasio ~26–32×); rasio terendah pada YOLOv10n ko
 | YOLOv8n+EfficientNMS | 66,63 | 67,23 | +0,60 | 0,003 | Ya |
 | YOLOv9t+EfficientNMS | **50,44** | **67,19** | **+16,75 (+33%)** | **<0,0001** | **Ya (sangat kuat)** |
 
-Lihat juga `../eksperimen/plots/fps_boxplot_by_tracker.png` untuk distribusi FPS per *tracker* di
-seluruh skenario.
+Pola ini juga tergambar pada distribusi FPS per *tracker* di seluruh skenario.
+
+**Gambar 3.3** Distribusi FPS per *tracker* (seluruh *run*, keenam model digabung)
+
+![Distribusi FPS per tracker, digambarkan sebagai kotak-garis yang membandingkan sebaran NvDCF dan NvSORT](../eksperimen/plots/fps_boxplot_by_tracker.png)
+
+Sebaran NvDCF pada grafik di atas jauh lebih lebar dibanding NvSORT yang nyaris tanpa
+variasi — cerminan langsung dari kontribusi YOLOv9t yang menarik sebaran NvDCF ke bawah,
+sementara skenario NvSORT untuk seluruh model (termasuk YOLOv9t) tetap terkumpul rapat di
+atas 66 FPS.
 
 **Dampaknya terhadap FPS keseluruhan bergantung pada model** — inilah temuan paling penting dari
 RM3. Untuk YOLOv8n, YOLOv10n, dan (secara praktis) YOLO26n/YOLOv8n+EfficientNMS, selisih FPS
@@ -301,13 +336,14 @@ NvDCF→NvSORT meningkatkan FPS **+30% dan +33%** — selisih yang sangat besar 
 
 Temuan inti RM3 dapat diringkas sebagai **"penghematan komputasi NvSORT bersifat universal pada
 level komponen (§3.4.1), tetapi manfaatnya pada *throughput* akhir bersifat kondisional pada
-model."** `Lat_Tracker_ms` NvSORT konsisten mendekati nol (rata-rata < 0,8 ms) untuk keenam model —
-properti arsitektural NvSORT itu sendiri yang tidak bergantung pada model deteksi di hulu. Namun
+model."** Latensi tahap *tracking* NvSORT konsisten mendekati nol (rata-rata < 0,8 ms) untuk
+keenam model — properti arsitektural NvSORT itu sendiri yang tidak bergantung pada model deteksi
+di hulu. Namun
 demikian, penghematan komputasi ini hanya "terlihat" pada *throughput* akhir ketika model deteksi
 di hulu **sudah menghabiskan sebagian besar *headroom* waktu-per-*frame* yang tersedia** —
-kondisi yang secara empiris hanya terpenuhi oleh YOLOv9t pada eksperimen ini (Infer + PreMux +
-Tracker gabungan mendekati/melebihi waktu per-*frame* yang dibutuhkan untuk mencapai 60 FPS,
-lihat §3.2.3). Pada YOLOv8n, YOLOv10n, dan YOLO26n, yang memiliki *headroom* lebih besar, biaya
+kondisi yang secara empiris hanya terpenuhi oleh YOLOv9t pada eksperimen ini (gabungan latensi
+tahap inferensi, pra-*multiplexing*, dan *tracking* mendekati/melebihi waktu per-*frame* yang dibutuhkan
+untuk mencapai 60 FPS, lihat §3.2.3). Pada YOLOv8n, YOLOv10n, dan YOLO26n, yang memiliki *headroom* lebih besar, biaya
 tambahan NvDCF "tersembunyi" di dalam *slack* tersebut dan tidak sampai menjadi *bottleneck*
 akhir *pipeline*.
 
@@ -320,10 +356,10 @@ bab ini, bukan dari spesifikasi *tracker* semata.
 
 ### 3.4.3 Analisis Penggunaan Sumber Daya Perangkat
 
-**Tabel 3.4.3** Efisiensi hardware (rata-rata GPU%, RAM, daya `VDD_IN`, dan estimasi energi per
-*frame* = `VDD_IN` ÷ FPS)
+**Tabel 3.4.3** Efisiensi perangkat keras (rata-rata GPU%, RAM, daya sistem total, dan estimasi
+energi per *frame* = daya sistem total ÷ FPS)
 
-| Model | Tracker | GPU % | RAM (MB) | `VDD_IN` (mW) | Energi/*frame* (mJ) |
+| Model | Tracker | GPU % | RAM (MB) | Daya sistem total (mW) | Energi/*frame* (mJ) |
 |---|---|---|---|---|---|
 | YOLOv8n | NvDCF | 84,6 | 1368,0 | 9185,8 | 137,58 |
 | YOLOv8n | NvSORT | 64,3 | 1296,5 | 8447,3 | **126,34** |
@@ -338,10 +374,18 @@ bab ini, bukan dari spesifikasi *tracker* semata.
 | YOLOv9t+EfficientNMS | NvDCF | 69,3 | 1361,7 | 8389,2 | **166,32** |
 | YOLOv9t+EfficientNMS | NvSORT | 91,2 | 1318,2 | 8942,3 | 133,10 |
 
+**Gambar 3.5** Estimasi energi per-*frame*: NvDCF vs. NvSORT
+
+![Diagram batang berkelompok estimasi energi per frame NvDCF dibandingkan NvSORT, keenam model](../eksperimen/plots/energy_per_frame.png)
+
+Grafik di atas menegaskan pola pada Tabel di atas: batang NvSORT konsisten sama tinggi atau
+lebih rendah daripada NvDCF di seluruh model, dengan selisih paling mencolok pada kedua varian
+YOLOv9t.
+
 Dua temuan tambahan dari sisi *resource*:
 
 1. **Estimasi energi per *frame* (daya ÷ FPS) menunjukkan NvSORT lebih hemat energi di *seluruh*
-   enam model**, walau daya sesaat (`VDD_IN`) NvSORT justru sedikit lebih tinggi daripada NvDCF
+   enam model**, walau daya sesaat sistem total NvSORT justru sedikit lebih tinggi daripada NvDCF
    pada kedua varian YOLOv9t (8930,2 vs. 8598,3 mW dan 8942,3 vs. 8389,2 mW). Ini karena NvSORT
    menyelesaikan jauh lebih banyak *frame* per detik pada YOLOv9t (67 vs. 51 FPS), sehingga
    energi yang dikeluarkan *per unit pekerjaan* (per *frame*) tetap lebih rendah (133 mJ vs. 167
@@ -354,29 +398,29 @@ Dua temuan tambahan dari sisi *resource*:
    *tracker* membuat GPU bekerja mendekati kapasitas penuhnya untuk inferensi (GPU-*bound*),
    sedangkan pada YOLOv9t+NvDCF, sebagian waktu justru dihabiskan menunggu komputasi NvDCF (yang
    sebagian berjalan di CPU) tanpa GPU *idle* sepenuhnya tercatat sebagai penurunan besar —
-   sampel `tegrastats` 1 Hz terlalu kasar untuk memastikan mekanisme persisnya. Pola ini
-   dilaporkan sebagai temuan yang memerlukan profil lebih dalam (mis. `trtexec --dumpProfile`
-   atau Nsight Systems, sesuai rekomendasi `utils/trt_efficientnms/README.md`), bukan disimpulkan
-   secara pasti pada bagian ini.
+   sampel pemantauan perangkat keras pada interval 1 Hz terlalu kasar untuk memastikan mekanisme
+   persisnya. Pola ini dilaporkan sebagai temuan yang memerlukan profil lebih dalam menggunakan
+   perangkat pembuat profil (*profiler*) tingkat rendah GPU, bukan disimpulkan secara pasti pada
+   bagian ini.
 
 Penggunaan RAM berkisar 1.265–1.449 MB di seluruh 12 konfigurasi — sekitar 31–35% dari kapasitas
-total 4GB modul Jetson Orin Nano yang dipakai (`BAB-2-Metode-Penelitian.md` §2.2) untuk satu
-*stream* video dan satu model aktif. Implikasi keterbatasan memori ini untuk skenario *deployment*
-yang lebih kompleks (mis. multi-kamera/multi-model) dibahas di §3.6.2.
+total 4GB modul Jetson Orin Nano yang dipakai (Bab II §2.2) untuk satu *stream* video dan satu
+model aktif. Implikasi keterbatasan memori ini untuk skenario *deployment* yang lebih kompleks
+(mis. multi-kamera/multi-model) dibahas di §3.6.2.
 
 **Kualitas/akurasi *tracking* (ID *switch*, MOTA/IDF1) sengaja tidak diukur** pada bagian ini,
-sesuai `BAB-1-Pendahuluan.md` §1.6 poin 5 dan justifikasi `BAB-2-Metode-Penelitian.md` §2.5.5 —
-perbandingan di atas murni efisiensi komputasi.
+sesuai Bab I §1.6 poin 5 dan justifikasi Bab II §2.5.5 — perbandingan di atas murni efisiensi
+komputasi.
 
 ## 3.5 Verifikasi Akurasi As-Deployed FP16 (Uji Sanity Check)
 
 ### 3.5.1 Evaluasi Nilai mAP50 dan mAP50-95 (Baseline Proxy FP32)
 
-Sebagai rujukan akurasi, tabel berikut diukur dengan `model.val()` (Ultralytics) di GPU cloud
-(Tesla T4, Kaggle) pada *val set* KITTI yang identik untuk keempat arsitektur dasar (1.010
-gambar, 4.722 *instance*) — lihat `../../docs/05_accuracy_results.md`. Nilai ini berlaku untuk
-pasangan *baseline*/EfficientNMS yang memakai bobot sama (EfficientNMS hanya mengubah eksekusi
-NMS, bukan bobot deteksi).
+Sebagai rujukan akurasi, tabel berikut diukur menggunakan fungsi validasi bawaan kerangka kerja
+Ultralytics di GPU *cloud* (Tesla T4, Kaggle) pada *val set* KITTI yang identik untuk keempat
+arsitektur dasar (1.010 gambar, 4.722 *instance*). Nilai ini berlaku untuk pasangan
+*baseline*/EfficientNMS yang memakai bobot sama (EfficientNMS hanya mengubah eksekusi NMS, bukan
+bobot deteksi).
 
 | Model | Params | GFLOPs | mAP50 | mAP50-95 | Precision | Recall |
 |---|---|---|---|---|---|---|
@@ -388,50 +432,60 @@ NMS, bukan bobot deteksi).
 (**Tebal** = nilai terbaik pada kolom tersebut.) YOLOv8n memimpin di mAP50-95 dan *precision*,
 tetapi selisihnya terhadap YOLOv10n hanya 0,3 poin mAP50-95 meski YOLOv10n memakai ~20% lebih
 sedikit GFLOPs — temuan ini menjadi salah satu dasar analisis *trade-off* di §3.6.1. Diskusi
-per-kelas dan temuan detail lain ada di `../../docs/05_accuracy_results.md` §5.2–§5.4 dan tidak
-diulang di sini untuk menghindari duplikasi.
+per-kelas dan temuan detail lain tidak diulang di sini untuk menghindari duplikasi.
 
-> *Disclaimer* (mengikuti `../../docs/03_deployment_pipeline.md` §3.4): akurasi di atas diukur
-> pada bobot FP32 (`.pt`); akurasi *deployment* FP16 yang benar-benar berjalan di Jetson via
-> DeepStream diasumsikan setara dalam toleransi kuantisasi yang umum diamati pada model YOLO,
-> namun **tidak diverifikasi secara independen** pada bagian ini — lihat §3.5.2.
+> *Disclaimer*: akurasi di atas diukur pada bobot presisi penuh (FP32); akurasi *deployment* FP16
+> yang benar-benar berjalan di Jetson via DeepStream diasumsikan setara dalam toleransi
+> kuantisasi yang umum diamati pada model YOLO, namun **tidak diverifikasi secara independen**
+> pada bagian ini — lihat §3.5.2.
 
 **Nilai mAP50/mAP50-95 *as-deployed* FP16: `TODO — belum dieksekusi`.** Tabel yang seharusnya
-menyandingkan mAP50/mAP50-95 hasil pipeline DeepStream FP16 sesungguhnya (dari `NvDsObjectMeta`,
-dihitung dengan `pycocotools.cocoeval.COCOeval`) akan mengisi bagian ini setelah eksekusi
-lapangan selesai (lihat status implementasi lengkap di §3.5.2). Angka tidak diisi dengan
-perkiraan agar tidak melanggar aturan anti-karangan data (`../PANDUAN-AI.md`).
+menyandingkan mAP50/mAP50-95 hasil *pipeline* DeepStream FP16 sesungguhnya — dihitung dari
+metadata deteksi *pipeline* menggunakan pustaka evaluasi standar COCO — akan mengisi bagian ini
+setelah eksekusi lapangan selesai (lihat status implementasi lengkap di §3.5.2). Angka tidak
+diisi dengan perkiraan agar tidak melanggar aturan anti-karangan data.
 
 ### 3.5.2 Analisis Deviasi Akurasi FP16 vs. Proxy FP32
 
-**TODO — belum dieksekusi.** Infrastrukturnya sudah selesai diimplementasikan di kode
-(`--dump-detections` di `src/main.cpp`, `scripts/prepare_eval_video.sh`,
-`utils/eval_map/eval_deepstream_map.py`; lihat `BAB-2-Metode-Penelitian.md` §2.6 (skenario pengujian poin 4)),
-tetapi langkah eksekusi nyata di Jetson (ekspor 1.010 gambar val ke perangkat, jalankan dump
-deteksi FP16, hitung mAP, bandingkan dengan §3.5.1) **belum dilakukan** pada 60 *run* yang
-dilaporkan di bab ini — *run* tersebut memakai `video_testing.mp4`, bukan video hasil ekspor
-gambar val KITTI. Tabel deviasi (Δ mAP50, Δ mAP50-95, FP32 vs. FP16) akan diisi setelah langkah
-(a)–(d) di `BAB-2-Metode-Penelitian.md` §2.6 (skenario pengujian poin 4) selesai.
+**TODO — belum dieksekusi.** Infrastrukturnya sudah selesai diimplementasikan (lihat Bab II §2.6,
+skenario pengujian keempat), tetapi langkah eksekusi nyata di Jetson (ekspor 1.010 gambar val ke
+perangkat, jalankan pencatatan deteksi FP16, hitung mAP, bandingkan dengan §3.5.1) **belum
+dilakukan** pada 60 *run* yang dilaporkan di bab ini — *run* tersebut memakai video pengujian
+tetap, bukan video hasil ekspor gambar val KITTI. Tabel deviasi (Δ mAP50, Δ mAP50-95, FP32 vs.
+FP16) akan diisi setelah seluruh langkah pada Bab II §2.6 (skenario pengujian keempat) selesai.
 
-Sebagai kriteria keberhasilan yang sudah ditetapkan lebih dahulu (`BAB-2-Metode-Penelitian.md`
-§2.6), deviasi ini akan dinilai sebagai **pass/fail** *sanity check* — bukan variabel yang
-dibandingkan antar model — dengan tujuan membuktikan bahwa optimasi performa komputasi (§3.2–3.4)
-tidak mengorbankan akurasi deteksi di luar batas toleransi yang wajar untuk kuantisasi FP16 pada
-model YOLO.
+Sebagai kriteria keberhasilan yang sudah ditetapkan lebih dahulu (Bab II §2.6), deviasi ini akan
+dinilai sebagai **pass/fail** *sanity check* — bukan variabel yang dibandingkan antar model —
+dengan tujuan membuktikan bahwa optimasi performa komputasi (§3.2–3.4) tidak mengorbankan akurasi
+deteksi di luar batas toleransi yang wajar untuk kuantisasi FP16 pada model YOLO.
 
 ## 3.6 Pembahasan Akhir dan Analisis Trade-Off
 
 ### 3.6.1 Kompromi Kecepatan, Akurasi, dan Efisiensi Energi
 
-Menggabungkan §3.5.1 (akurasi) dan §3.2–§3.4 (*runtime*/hardware) — lihat
-`../eksperimen/plots/tradeoff_map_vs_fps.png` dan `tradeoff_map_vs_power.png` — seluruh model
-*baseline* melampaui ambang *real-time* dengan margin besar (§3.2.1), sehingga tidak ada model
-yang "gugur" murni karena kecepatan. Karena itu, rekomendasi disusun berkondisi (mengikuti
-struktur `../../docs/07_tradeoff_analysis.md` §7.5), bukan klaim satu model "terbaik" tunggal:
+Menggabungkan §3.5.1 (akurasi) dan §3.2–§3.4 (*runtime*/perangkat keras) — tergambar pada grafik
+Pareto akurasi-vs-*throughput* dan akurasi-vs-daya — seluruh model *baseline* melampaui ambang
+*real-time* dengan margin besar (§3.2.1), sehingga tidak ada model yang "gugur" murni karena
+kecepatan. Karena itu, rekomendasi disusun berkondisi, bukan klaim satu model "terbaik" tunggal:
+
+**Gambar 3.6** *Trade-off* akurasi vs. kecepatan, seluruh kombinasi model dan *tracker*
+
+![Diagram sebar trade-off akurasi mAP50-95 versus rata-rata FPS, dua belas kombinasi model dan tracker](../eksperimen/plots/tradeoff_map_vs_fps.png)
+
+**Gambar 3.7** *Trade-off* akurasi vs. daya sistem total, seluruh kombinasi model dan *tracker*
+
+![Diagram sebar trade-off akurasi mAP50-95 versus daya sistem total, dua belas kombinasi model dan tracker](../eksperimen/plots/tradeoff_map_vs_power.png)
+
+Kedua grafik sebar di atas menegaskan pengamatan yang mendasari kelima poin rekomendasi berikut:
+titik-titik NvSORT (label "nvsort") pada tiap model secara konsisten berada di sisi kanan
+(FPS lebih tinggi) atau sisi kiri (daya lebih rendah) dibanding pasangan NvDCF-nya pada akurasi
+yang identik, sementara jarak vertikal antar-*cluster* model menggambarkan selisih akurasi yang
+jauh lebih kecil dibanding jarak horizontal antar-*tracker* pada YOLOv9t — pola yang menjadi
+dasar rekomendasi berkondisi berikut ini:
 
 1. **Prioritas akurasi maksimum**: YOLOv8n (mAP50-95 0,8397 tertinggi) dengan *tracker* NvSORT
-   (FPS 66,86, hampir tidak berbeda dari NvDCF secara statistik — §3.4.2 — namun `Lat_Tracker_ms`
-   jauh lebih rendah dan energi/*frame* lebih hemat, §3.4.3).
+   (FPS 66,86, hampir tidak berbeda dari NvDCF secara statistik — §3.4.2 — namun latensi tahap
+   *tracking* jauh lebih rendah dan energi/*frame* lebih hemat, §3.4.3).
 2. **Prioritas efisiensi komputasi/GFLOPs terendah dengan akurasi kompetitif**: YOLO26n (GFLOPs
    5,2, mAP50 0,9706 hampir menyamai YOLOv8n) dipasangkan NvSORT — FPS meningkat signifikan
    (65,66 → 67,29, §3.4.2) dan GPU% turun dari 75,6% ke 68,1% (§3.4.3).
@@ -455,64 +509,64 @@ di atas akan lebih kuat setelah §3.5.2 (verifikasi *as-deployed* FP16) tersedia
 yang diharapkan kecil berdasarkan literatur umum kuantisasi FP16 pada model YOLO.
 
 **Perbandingan dengan penelitian terkait.** Temuan hasil negatif EfficientNMS (§3.3.2) melengkapi
-— bukan bertentangan dengan — literatur akselerasi NMS yang dirujuk pada `BAB-1-Pendahuluan.md`
-§1.2.5 (Chen dkk., 2022; Oro dkk., 2022; Yang dkk., 2025): ketiga studi tersebut menunjukkan
-percepatan besar dengan membangun akselerator/kernel *kustom dari nol*, sedangkan penelitian ini
-menguji pendekatan yang lebih umum diadopsi pengembang aplikasi — *plugin* vendor siap pakai
-(`EfficientNMS_TRT`). Hasil yang berbeda arah ini menegaskan bahwa klaim akselerasi NMS paralel
-pada literatur **tidak otomatis berlaku umum** untuk semua strategi implementasi, terutama pada
-model kelas *nano/tiny* yang biaya NMS *baseline*-nya sudah relatif kecil (§3.3.1). Sementara itu,
-untuk RM3, tidak ditemukan studi pembanding langsung yang mengukur efisiensi komputasi NvDCF vs.
-NvSORT pada pipeline DeepStream di perangkat Jetson-*class* (`BAB-1-Pendahuluan.md` §1.1, §1.2.7) —
-temuan §3.4 (penghematan NvSORT bersifat universal pada level komponen namun kondisional pada
-model di level *throughput*) dengan demikian mengisi celah literatur tersebut, sejalan dengan
-kerangka metodologis MLPerf Mobile Inference Benchmark (`BAB-2-Metode-Penelitian.md` §2.5.5) yang
-menjadi rujukan pendekatan "akurasi sebagai ambang, komputasi sebagai variabel yang diukur".
+— bukan bertentangan dengan — literatur akselerasi NMS yang dirujuk pada Bab I §1.2.5 (Chen dkk.,
+2022; Oro dkk., 2022; Yang dkk., 2025): ketiga studi tersebut menunjukkan percepatan besar dengan
+membangun akselerator/kernel *kustom dari nol*, sedangkan penelitian ini menguji pendekatan yang
+lebih umum diadopsi pengembang aplikasi — *plugin* vendor siap pakai (EfficientNMS). Hasil yang
+berbeda arah ini menegaskan bahwa klaim akselerasi NMS paralel pada literatur **tidak otomatis
+berlaku umum** untuk semua strategi implementasi, terutama pada model kelas *nano/tiny* yang
+biaya NMS *baseline*-nya sudah relatif kecil (§3.3.1). Sementara itu, untuk RM3, tidak ditemukan
+studi pembanding langsung yang mengukur efisiensi komputasi NvDCF vs. NvSORT pada *pipeline*
+DeepStream di perangkat Jetson-*class* (Bab I §1.1, §1.2.7) — temuan §3.4 (penghematan NvSORT
+bersifat universal pada level komponen namun kondisional pada model di level *throughput*) dengan
+demikian mengisi celah literatur tersebut, sejalan dengan kerangka metodologis MLPerf Mobile
+Inference Benchmark (Bab II §2.5.5) yang menjadi rujukan pendekatan "akurasi sebagai ambang,
+komputasi sebagai variabel yang diukur".
 
 ### 3.6.2 Keterbatasan Sistem
 
 **Keterbatasan metodologis eksekusi 60 *run* ini:**
 
 1. **Durasi klip video pengujian relatif singkat** (± 13–20 detik per *run*, lebih pendek dari
-   rekomendasi 180 detik di `04_benchmark_protocol.md` §4.3) karena `run_all_benchmark.sh` tidak
-   menetapkan `--duration` dan bergantung pada panjang alami `video_testing.mp4`. Setelah buang
-   *warm-up* 10 detik, jumlah *frame* yang dianalisis per skenario berkisar 633–1.399 (gabungan 5
-   repetisi) — cukup untuk membedakan pola besar seperti pada §3.4, tetapi estimasi pada skenario
-   dengan *n* lebih kecil (mis. NvSORT, ~630–660 *frame*) memiliki margin ketidakpastian yang
-   lebih besar dibanding jika direkam pada klip yang lebih panjang.
-2. **Satu klip video dengan satu tingkat kepadatan objek** (`04_benchmark_protocol.md` §4.1) —
-   hasil ini belum mengonfirmasi apakah pola *bottleneck* YOLOv9t+NvDCF (§3.2.3, §3.4) akan makin
-   parah atau justru mengecil pada skenario lalu lintas yang lebih padat/lebih jarang.
+   rekomendasi 180 detik pada protokol pengujian) karena orkestrasi otomatis tidak menetapkan
+   batas durasi eksplisit dan bergantung pada panjang alami video input. Setelah buang *warm-up*
+   10 detik, jumlah *frame* yang dianalisis per skenario berkisar 633–1.399 (gabungan 5 repetisi)
+   — cukup untuk membedakan pola besar seperti pada §3.4, tetapi estimasi pada skenario dengan *n*
+   lebih kecil (mis. NvSORT, ~630–660 *frame*) memiliki margin ketidakpastian yang lebih besar
+   dibanding jika direkam pada klip yang lebih panjang.
+2. **Satu klip video dengan satu tingkat kepadatan objek** — hasil ini belum mengonfirmasi apakah
+   pola *bottleneck* YOLOv9t+NvDCF (§3.2.3, §3.4) akan makin parah atau justru mengecil pada
+   skenario lalu lintas yang lebih padat/lebih jarang.
 
-**Keterbatasan modul memori 4GB.** Seluruh 12 konfigurasi menggunakan 1.265–1.449 MB RAM
-(§3.4.3) dari total 4GB yang tersedia pada modul Jetson Orin Nano yang dipakai
-(`BAB-2-Metode-Penelitian.md` §2.2) — sekitar 31–35% kapasitas untuk satu *stream* video dan
-satu model aktif. Meski masih menyisakan *headroom* untuk skenario satu-kamera satu-model seperti
-pada penelitian ini, angka ini mengindikasikan bahwa skenario *deployment* ADAS yang lebih
-kompleks (mis. beberapa kamera sekaligus, atau beberapa model berjalan bersamaan untuk tugas
-persepsi berbeda) berisiko mendekati batas kapasitas memori pada SKU 4GB — sebuah pertimbangan
-praktis bagi pengembang yang mempertimbangkan platform ini untuk sistem produksi, di luar SKU 8GB
-yang tidak diuji pada penelitian ini.
+**Keterbatasan modul memori 4GB.** Seluruh 12 konfigurasi menggunakan 1.265–1.449 MB RAM (§3.4.3)
+dari total 4GB yang tersedia pada modul Jetson Orin Nano yang dipakai (Bab II §2.2) — sekitar
+31–35% kapasitas untuk satu *stream* video dan satu model aktif. Meski masih menyisakan
+*headroom* untuk skenario satu-kamera satu-model seperti pada penelitian ini, angka ini
+mengindikasikan bahwa skenario *deployment* ADAS yang lebih kompleks (mis. beberapa kamera
+sekaligus, atau beberapa model berjalan bersamaan untuk tugas persepsi berbeda) berisiko
+mendekati batas kapasitas memori pada SKU 4GB — sebuah pertimbangan praktis bagi pengembang yang
+mempertimbangkan platform ini untuk sistem produksi, di luar SKU 8GB yang tidak diuji pada
+penelitian ini.
 
 **Pengaruh *thermal throttling*.** Risiko *thermal throttling* dimitigasi secara prosedural
-melalui jeda *cooldown* 60 detik antar skenario dan pembersihan *cache* (`sync` + `drop_caches`,
-`BAB-2-Metode-Penelitian.md` §2.6), mengikuti rekomendasi `04_benchmark_protocol.md` §4.3.
-Namun demikian, penelitian ini **tidak mengukur suhu SoC secara langsung** — kanal pengumpulan
-data hardware (§2.4) hanya mencakup GPU%, CPU%, RAM, dan daya per-*rail* dari `tegrastats`, tanpa
-membaca zona termal (`/sys/devices/virtual/thermal/`). Dengan demikian, efektivitas mitigasi
-*cooldown* dalam mencegah *throttling* bersifat **prosedural** (mengikuti praktik yang
-direkomendasikan), bukan **terverifikasi langsung** dengan data suhu — sebuah keterbatasan
-instrumentasi yang perlu dicantumkan secara jujur, konsisten dengan `../PANDUAN-AI.md` dan
-`../../docs/08_limitations_future_work.md`.
+melalui jeda *cooldown* 60 detik antar skenario dan pembersihan tembolok (*cache*) sistem (Bab II
+§2.6), mengikuti rekomendasi protokol pengujian. Namun demikian, penelitian ini **tidak mengukur
+suhu SoC secara langsung** — kanal pengumpulan data perangkat keras (§2.4) hanya mencakup GPU%,
+CPU%, RAM, dan daya per-jalur (*rail*) dari utilitas pemantauan bawaan Jetson Linux, tanpa membaca
+zona termal sistem secara terpisah. Dengan demikian, efektivitas mitigasi *cooldown* dalam
+mencegah *throttling* bersifat **prosedural** (mengikuti praktik yang direkomendasikan), bukan
+**terverifikasi langsung** dengan data suhu — sebuah keterbatasan instrumentasi yang perlu
+dicantumkan secara jujur.
 
 **Rekomendasi pengembangan lanjutan** (diurutkan dari usaha kecil/dampak sedang ke usaha
-besar/dampak besar, mengikuti `../../docs/08_limitations_future_work.md` §8.2):
+besar/dampak besar):
 
 1. Menyelesaikan verifikasi akurasi *as-deployed* FP16 (§3.5.2) sebagai prioritas utama, karena
    seluruh rekomendasi *trade-off* di §3.6.1 masih bergantung pada *proxy* FP32.
-2. Menambah kanal pengukuran suhu SoC (`tegrastats` sudah melaporkan suhu, namun belum
-   diekstraksi oleh `LogParser` saat ini) untuk memverifikasi langsung asumsi mitigasi *thermal
-   throttling* di atas, alih-alih bergantung pada prosedur *cooldown* semata.
+2. Menambah kanal pengukuran suhu SoC (utilitas pemantauan bawaan Jetson Linux sudah melaporkan
+   suhu, namun belum diekstraksi oleh mekanisme pencatatan yang dipakai saat ini) untuk
+   memverifikasi langsung asumsi mitigasi *thermal throttling* di atas, alih-alih bergantung pada
+   prosedur *cooldown* semata.
 3. Eksperimen presisi INT8 sebagai variabel tambahan (di luar SKU tanpa DLA seperti pada
    penelitian ini), untuk melengkapi perbandingan FP16 vs. INT8 secara terukur, bukan cuma
    teoretis.
@@ -520,7 +574,7 @@ besar/dampak besar, mengikuti `../../docs/08_limitations_future_work.md` §8.2):
    video lebih panjang sesuai rekomendasi protokol) untuk menguji generalisasi temuan §3.2–§3.4
    di luar satu klip video terkontrol yang dipakai penelitian ini.
 5. Mengukur kualitas/ketahanan *tracking* (ID *switch*, MOTA/IDF1) secara terpisah dari efisiensi
-   komputasi (di luar *scope* penelitian ini, `BAB-1-Pendahuluan.md` §1.6 poin 5), untuk
-   melengkapi gambaran *trade-off* NvDCF vs. NvSORT secara menyeluruh.
+   komputasi (di luar *scope* penelitian ini, Bab I §1.6 poin 5), untuk melengkapi gambaran
+   *trade-off* NvDCF vs. NvSORT secara menyeluruh.
 6. Menguji skenario *deployment* multi-kamera/multi-model pada SKU 4GB maupun 8GB untuk
    mengonfirmasi secara empiris batas praktis keterbatasan memori yang didiskusikan di atas.

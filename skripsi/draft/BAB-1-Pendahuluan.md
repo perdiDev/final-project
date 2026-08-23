@@ -189,7 +189,7 @@ Karakteristik kunci DeepStream yang membedakannya dari *pipeline* konvensional (
 integrasi manual berbasis OpenCV) adalah penggunaan arsitektur memori *zero-copy*
 berbasis NVIDIA Memory Manager (NVMM). Pada *pipeline* standar, *frame* gambar sering
 disalin secara berulang antara memori CPU (*host*) dan GPU (*device*) pada setiap
-tahapan (dekode, prapemrosesan, inferensi, *post-processing*). NVMM mengeliminasi
+tahapan (*decode*, *pre-processing*, inferensi, *post-processing*). NVMM mengeliminasi
 hambatan (*bottleneck*) ini dengan menahan *buffer frame* video secara persisten di dalam
 memori GPU dari awal hingga akhir *pipeline*.
 
@@ -206,7 +206,7 @@ al., 2025; Dhatrika et al., 2025).
 Penelitian ini mengevaluasi berbagai generasi kelas ringan (*nano/tiny*) dari YOLO,
 seperti YOLOv8, YOLOv9, YOLOv10, dan YOLO26. Perbedaan struktural penting di antara
 generasi ini terletak pada strategi *post-processing*. Generasi awal hingga v9
-menghasilkan banyak prediksi kotak redundan di sekitar objek tunggal, sehingga
+menghasilkan banyak prediksi *bounding box* redundan di sekitar objek tunggal, sehingga
 mewajibkan penggunaan filter *Non-Maximum Suppression* (NMS). Sebaliknya, arsitektur
 yang lebih modern (seperti YOLOv10n dan YOLO26n) telah mengintegrasikan metode optimasi
 struktural (*consistent dual assignments*) selama pelatihan, menjadikannya model
@@ -220,7 +220,7 @@ sekumpulan *bounding box* kandidat. Setiap kandidat direpresentasikan oleh param
 koordinat (x, y, w, h) dan sebuah nilai keyakinan (*confidence score*) yang menyatakan
 probabilitas keberadaan objek berserta kelasnya.
 
-Untuk mengevaluasi tingkat tumpang-tindih antar kandidat kotak, digunakan metrik
+Untuk mengevaluasi tingkat tumpang-tindih antar kandidat *bounding box*, digunakan metrik
 *Intersection over Union* (IoU), yang diformulasikan sebagai rasio luas irisan terhadap
 luas gabungan dari dua *bounding box* (A dan B):
 
@@ -228,11 +228,11 @@ luas gabungan dari dua *bounding box* (A dan B):
 IoU = Area(A ∩ B) / Area(A ∪ B)
 ```
 
-*Non-Maximum Suppression* (NMS) adalah algoritma pascapemrosesan yang menyaring kandidat
-berlebih tersebut. Proses NMS standar mengurutkan seluruh *box* berdasarkan *confidence
-score* tertinggi, mempertahankan kotak dengan skor tertinggi, lalu menghapus kotak-kotak
-lain yang memiliki nilai IoU dengan kotak tertinggi melampaui suatu nilai ambang batas
-(*threshold*) tertentu (misalnya IoU > 0,45).
+*Non-Maximum Suppression* (NMS) adalah algoritma *post-processing* yang menyaring kandidat
+berlebih tersebut. Proses NMS standar mengurutkan seluruh *bounding box* berdasarkan
+*confidence score* tertinggi, mempertahankan *bounding box* dengan skor tertinggi, lalu
+menghapus *bounding box* lain yang memiliki nilai IoU dengan *bounding box* tertinggi
+melampaui suatu nilai ambang batas (*threshold*) tertentu (misalnya IoU > 0,45).
 
 Implementasi NMS tradisional (seperti *GreedyNMS*) bersifat sekuensial dan umumnya
 dieksekusi oleh CPU (*host*), yang seringkali menjadi hambatan latensi pada pemrosesan
@@ -319,9 +319,10 @@ aplikasi kritis (misalnya minimum 30 FPS).
 **B. Latensi dan Persentil (P95) Latensi**
 
 Latensi adalah durasi tempuh pemrosesan. Pada penelitian ini, dievaluasi latensi
-*end-to-end* (t_e2e) yang diukur dari titik bingkai masuk `nvstreammux` hingga keluar di
-blok antarmuka layar, dan dirincikan secara per-komponen (contoh: `Lat_Infer_ms`,
-`Lat_Tracker_ms`). Dalam sistem *safety-critical* seperti ADAS, rerata (*mean*) rentan
+*end-to-end* yang diukur dari titik bingkai masuk pada tahap *multiplexing*
+aliran video hingga keluar di blok antarmuka layar, dan dirincikan secara per-komponen
+(mis. tahap inferensi model dan tahap *tracking* objek). Dalam sistem
+*safety-critical* seperti ADAS, rerata (*mean*) rentan
 menyembunyikan efek variabilitas ekstrem (*jitter*). Oleh karena itu, metrik menggunakan
 persentil ke-95 (P95) yang mengindikasikan bahwa 95% dari seluruh siklus *frame*
 diselesaikan dalam durasi kurang dari atau sama dengan nilai latensi tersebut.
@@ -395,36 +396,28 @@ Penelitian ini memiliki tujuan antara lain:
 Agar penelitian lebih terarah dan fokus, maka batasan penelitian ini adalah sebagai
 berikut:
 
-1. Pengujian penelitian dilakukan hanya pada perangkat **Jetson Orin Nano** sebagai
-   platform utama eksperimen.
-2. Peningkatan performa dianalisis hanya berdasarkan perbandingan *pipeline* sebelum dan
-   sesudah optimasi menggunakan NMS paralel berbasis TensorRT plugin (EfficientNMS) dan
-   pemilihan algoritma *tracking* (NvDCF vs. NvSORT).
-3. Penelitian menggunakan model *pre-trained* sehingga tidak berfokus pada proses
-   pelatihan maupun peningkatan akurasi model deteksi.
-4. Penelitian hanya membahas *pipeline* pemrosesan video dan tidak mencakup integrasi
-   dengan sistem kendaraan secara keseluruhan.
-5. Evaluasi algoritma *tracking* dibatasi pada aspek **efisiensi komputasi** (FPS,
-   latensi per-komponen, utilisasi *resource*), dan **tidak mencakup evaluasi kualitas
-   atau akurasi *tracking*** (mis. jumlah *ID switch*, MOTA/IDF1). Pembatasan ini
-   konsisten dengan rumusan masalah ketiga yang memang dirumuskan secara eksplisit
-   sebagai pertanyaan efisiensi komputasi (§1.3), sejalan dengan sumbu akurasi-vs-komputasi
-   yang sudah melekat pada desain profil NvDCF dan NvSORT itu sendiri menurut dokumentasi
-   resmi NVIDIA (lihat Bab II §2.5.5) — bukan sesuatu yang perlu diukur ulang penelitian
-   ini agar pertanyaannya valid dijawab. Ketidaktersediaan dataset *tracking* berlabel
-   (video berurutan dengan ID objek konsisten, mis. KITTI Tracking) pada ruang lingkup
-   penelitian ini menjadi alasan pendukung tambahan.
-
-> `[VERIFIKASI]` §1.5 Batasan Masalah + §1.6 Sistematika Penulisan (draf lama, dua subbab
-> terpisah) digabung menjadi satu §1.6 Ruang Lingkup Penelitian mengikuti PDF — PDF tidak
-> memiliki subbab Sistematika Penulisan tersendiri di BAB I. Isi kelima poin di atas
-> disalin dari PDF (`extracted.txt` baris 757–784) dan **secara internal konsisten dengan
-> draf lama** (identik dengan §1.5 Batasan Masalah versi sebelumnya). Dua koreksi kecil
-> dilakukan terhadap teks PDF: (a) rujukan silang "(§1.2)" pada poin 5 PDF diperbaiki
-> menjadi "(§1.3)" — pada naskah PDF rujukan ini tampaknya sisa dari versi sebelum §1.2
-> Landasan Teori disisipkan (bug penomoran di PDF itu sendiri, bukan pilihan sengaja);
-> (b) rujukan "Bab II §2.2.6" pada PDF diperbaiki menjadi "Bab II §2.5.5" — sudah dicek
-> ulang terhadap `BAB-2-Metode-Penelitian.md` hasil restrukturisasi 2026-08-21 (PDF-aligned):
-> justifikasi tracker NvDCF/NvSORT berikut sitasi dokumentasi resmi NVIDIA kini berada di
-> §2.5.5 Implementasi Multi Object Tracking (bukan §2.2.6 atau §2.5.3 seperti dugaan
-> sebelumnya).
+1. Pengujian kinerja perangkat keras difokuskan hanya pada satu perangkat edge computing
+   berupa NVIDIA Jetson Orin Nano varian memori 4 gigabyte, dan tidak mencakup perangkat
+   kelas lebih tinggi berikut modul akselerator perangkat keras khusus yang menyertainya.
+2. Peningkatan kinerja dianalisis hanya melalui perbandingan pipeline sebelum dan sesudah
+   dua bentuk optimasi, berupa penerapan mekanisme Non-Maximum Suppression paralel
+   berbasis plugin TensorRT dan penggantian algoritma pelacakan objek antara profil
+   NvDCF dan profil NvSORT.
+3. Penelitian menggunakan model deteksi yang telah dilatih sebelumnya sehingga tidak
+   mencakup proses pelatihan model dari awal maupun peningkatan akurasi arsitektural
+   model deteksi.
+4. Penelitian hanya membahas pipeline perangkat lunak untuk pemrosesan video dan tidak
+   mencakup integrasi dengan modul kendali kendaraan maupun subsistem bantuan pengemudi
+   lain di luar komponen persepsi visual.
+5. Evaluasi algoritma pelacakan objek dibatasi pada aspek efisiensi komputasi berupa laju
+   bingkai per detik, latensi komponen pelacak, dan utilisasi sumber daya perangkat
+   keras, dan tidak mencakup evaluasi kualitas maupun akurasi hasil pelacakan, karena
+   penelitian ini tidak memiliki akses pada kumpulan data pelacakan objek berlabel dengan
+   identitas objek yang konsisten antar-bingkai.
+6. Seluruh pengujian dijalankan pada satu tingkat presisi numerik tunggal berupa setengah
+   presisi (Half-Precision Floating-Point, FP16), dan tidak membandingkan konfigurasi
+   presisi penuh maupun kuantisasi bilangan bulat 8-bit sebagai konfigurasi produksi
+   alternatif.
+7. Kamera stereo yang digunakan sebagai sumber video hanya dimanfaatkan sebagai sumber
+   aliran video dua dimensi, sehingga kemampuan estimasi jarak berbasis stereo pada
+   kamera tersebut tidak dimanfaatkan dan tidak menjadi bagian dari penelitian ini.

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import matplotlib
 
@@ -58,6 +58,66 @@ def build_tradeoff_table(runtime_summary: pd.DataFrame, accuracy: pd.DataFrame) 
     return merged
 
 
+def _place_labels_without_overlap(
+    points: Sequence[tuple],
+    x_span: float,
+    y_span: float,
+    cluster_threshold: float = 0.1,
+    row_gap_frac: float = 0.065,
+) -> List[float]:
+    """Hitung offset-y label supaya tidak tumpang-tindih pada titik yang berdekatan.
+
+    `points` berisi tuple (x, y, text) terurut sembarang. Karena beberapa skenario
+    (mis. varian *baseline* vs. EfficientNMS berbobot sama) berbagi akurasi/FPS/daya
+    yang nyaris identik, titik-titik ini divisualisasikan sebagai satu marker yang
+    "menumpuk" rapat. Titik dikelompokkan memakai jarak Euclidean **ternormalisasi**
+    (x dan y masing-masing dibagi rentangnya sendiri, agar kedua sumbu sebanding
+    meski satuan/skalanya berbeda jauh, mis. FPS vs. mAP) via *union-find* sederhana,
+    lalu label dalam satu klaster disebar vertikal berjarak tetap
+    `row_gap_frac * y_span`, dipusatkan pada rata-rata y klaster tersebut. Klaster
+    berisi satu titik tidak digeser sama sekali. Mengembalikan daftar offset-y
+    (data-unit) sejajar urutan input `points`.
+    """
+    n = len(points)
+    x_span = max(x_span, 1e-9)
+    y_span = max(y_span, 1e-9)
+    parent = list(range(n))
+
+    def _find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def _union(i: int, j: int) -> None:
+        ri, rj = _find(i), _find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx = (points[i][0] - points[j][0]) / x_span
+            dy = (points[i][1] - points[j][1]) / y_span
+            if (dx * dx + dy * dy) ** 0.5 < cluster_threshold:
+                _union(i, j)
+
+    clusters: Dict[int, List[int]] = {}
+    for i in range(n):
+        clusters.setdefault(_find(i), []).append(i)
+
+    offsets = [0.0] * n
+    row_gap = row_gap_frac * y_span
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+        members = sorted(members, key=lambda i: -points[i][1])
+        base_y = sum(points[i][1] for i in members) / len(members)
+        for rank, idx in enumerate(members):
+            slot = rank - (len(members) - 1) / 2
+            offsets[idx] = (base_y + slot * row_gap) - points[idx][1]
+    return offsets
+
+
 def plot_scatter(
     df: pd.DataFrame,
     x_col: str,
@@ -72,7 +132,7 @@ def plot_scatter(
         print(f"[WARN] Tidak ada baris valid untuk plot '{title}', dilewati.")
         return
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(10, 6.5))
     models = sorted(plot_df["model"].unique())
     for i, model in enumerate(models):
         sub = plot_df[plot_df["model"] == model]
@@ -84,19 +144,40 @@ def plot_scatter(
             s=60,
             edgecolors="white",
             linewidths=0.5,
+            zorder=3,
         )
-        for _, row in sub.iterrows():
-            ax.annotate(
-                f"{row['display_name']} ({row['tracker']})",
-                (row[x_col], row[y_col]),
-                fontsize=7,
-                xytext=(4, 4),
-                textcoords="offset points",
+
+    x_span = float(plot_df[x_col].max() - plot_df[x_col].min())
+    y_span = float(plot_df[y_col].max() - plot_df[y_col].min())
+    points = [
+        (row[x_col], row[y_col], f"{row['display_name']} ({row['tracker']})")
+        for _, row in plot_df.iterrows()
+    ]
+    y_offsets = _place_labels_without_overlap(points, x_span=x_span, y_span=y_span)
+    for (x, y, text), y_off in zip(points, y_offsets):
+        label_y = y + y_off
+        if abs(y_off) > y_span * 0.01:
+            ax.plot(
+                [x, x],
+                [y, label_y],
+                color="0.6",
+                linewidth=0.6,
+                zorder=2,
             )
+        ax.annotate(
+            text,
+            (x, label_y),
+            fontsize=7,
+            xytext=(6, 0),
+            textcoords="offset points",
+            va="center",
+            zorder=4,
+        )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.grid(linestyle=":", alpha=0.4)
+    ax.margins(x=0.18)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)

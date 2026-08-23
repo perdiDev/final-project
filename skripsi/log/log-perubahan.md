@@ -10,6 +10,261 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-23 22:55 WITA — Standardisasi "kotak" → *bounding box* di prosa BAB I–IV, berdasar riset referensi
+
+- Permintaan user: cari referensi apakah skripsi/paper Indonesia menerjemahkan istilah
+  seperti "NMS box count" ke bahasa Indonesia atau tidak, untuk memverifikasi aturan
+  istilah teknis yang sudah diterapkan sebelumnya alih-alih menebak.
+- Riset: dicek `skripsi/referensi-skripsi/` (skripsi Audy Febryanti — deteksi objek
+  *real-time*, domain sangat relevan) dan satu skripsi Unhas sejenis (SSD *obstacle
+  detection*, unduhan `repository.unhas.ac.id`). Temuan: *preprocessing*/*postprocessing*,
+  *tracking* (kategori formal SOT/MOT), "skor keyakinan (*confidence score*)", "ambang
+  batas (*threshold*)" — semua sudah konsisten dengan pola yang diterapkan pada entri log
+  sebelumnya, tidak perlu revisi. Temuan baru: kedua referensi **tidak pernah** memakai
+  kata "kotak" polos untuk *bounding box* di prosa berjalan — istilahnya digloss sekali
+  ("kotak pembatas/*bounding box*") lalu selanjutnya konsisten memakai "*bounding box*"
+  di setiap kemunculan berikutnya, diperlakukan sebagai istilah pinjaman tetap (mirip
+  "piksel" yang tidak pernah diterjemahkan). Draf sebelumnya justru mencampur
+  "*bounding box*"/"*box*"/"kotak" untuk konsep yang sama dalam satu paragraf yang sama
+  (mis. BAB I §1.2.5).
+- Diganti (bare "kotak"/"*box*" yang merujuk konsep *bounding box* deteksi, bukan
+  kotak-diagram/boxplot): BAB I §1.2.4–1.2.5 (4 titik: "kotak redundan", "kandidat
+  kotak", "seluruh *box*", "kotak"×3 di kalimat NMS); BAB II §2.5.4 (1 titik:
+  "penyaringan kotak pembatas"), §2.5.5 (1 titik: "kotak per *frame*"), §2.6 (2 titik:
+  "penskalaan-ulang kotak pembatas" ×2); BAB III §3.3.2 (1 titik: "batas jumlah kotak
+  keluaran" — ini contoh persis "NMS box count" yang ditanyakan user); BAB IV saran #3
+  (1 titik: "batas maksimum kotak keluaran").
+- Sengaja **tidak** diubah: BAB II §2.5.4 baris 408–409 ("kotak merah"/"kotak hijau" —
+  warna node diagram mermaid, bukan *bounding box*); BAB II §2.6 baris 625 ("kotak
+  pembatas/*bounding box*" — gloss pertama yang memang sudah benar, dipertahankan
+  sebagai titik pengenalan istilah); BAB III §3.2.1/§3.4.2 ("kotak-garis" = istilah
+  boxplot, tidak berkaitan dengan *bounding box* deteksi).
+- Verifikasi: `grep -n "kotak" skripsi/draft/BAB-*.md` menyisakan hanya 6 titik yang
+  memang sengaja dipertahankan (di atas). Tidak ada perubahan pada skrip *chart* atau
+  angka — murni istilah prosa.
+
+## 2026-08-23 22:33 WITA — Perluas perbaikan istilah: "pelacakan"/"keluaran"/"pemrosesan" jadi *tracking*/*output*/*processing* saat menjadi nama tahap/metrik formal
+
+- Permintaan lanjutan user setelah entri sebelumnya (pemaduan/tampilan): "yang
+  lain juga, kayak pelacakan, keluaran dan pemrosesan, kata pra juga, dll yang
+  kamu rasa itu bahasa teknis" — meminta perluasan aturan yang sama ke istilah
+  lain, dengan penilaian diserahkan ke AI.
+- Prinsip yang diterapkan (revisi dari entri sebelumnya, yang keliru
+  menganggap pelacakan/keluaran/pemrosesan selalu aman dipertahankan):
+  bedakan **penggunaan sebagai nama tahap/metrik formal** (mis. kolom Tabel
+  3.2.3/3.4.1, nama tahap *pipeline* yang dirujuk berulang sebagai satuan
+  pengukuran) — untuk kasus ini istilah asing/teknis dipakai (*tracking*,
+  *output*, *pre-processing*, *post-processing*) — vs. **penggunaan naratif/
+  deskriptif generik** (mis. "kotak keluaran" pada NMS, "mode keluaran" I/O,
+  "algoritma pelacakan objek" sebagai nama umum tugas *computer vision*,
+  "efisiensi pemrosesan piksel" pada penjelasan mekanisme tracker) — untuk
+  kasus ini bentuk Indonesia tetap dipertahankan karena tidak merujuk metrik
+  bernama tertentu.
+- Diganti (khusus penggunaan formal di atas): "pelacakan"/"tahap pelacakan" →
+  "*tracking*"/"tahap *tracking*"; "keluaran" (sebagai nama tahap *output*
+  *pipeline*) → "*output*"; "pra-pemrosesan"/"pasca-pemrosesan"/
+  "prapemrosesan"/"pascapemrosesan" → "*pre-processing*"/"*post-processing*";
+  "dekode" → "*decode*" (satu daftar tahapan NVMM di BAB I).
+- Lokasi yang diubah: BAB I (baris ~192, ~231, ~324), BAB II (baris ~364,
+  ~485, ~613, ~660–664 definisi kanonik §2.7, ~694, ~708 tabel RM3), BAB III
+  (header Tabel 3.4.1 + ~11 titik prosa di §3.2.3/§3.4.1/§3.4.2/§3.4.3
+  termasuk caption Gambar 3.4), BAB IV (baris ~50, ~54, rangkuman RM2/RM3).
+  Sengaja **tidak** diubah: "kotak keluaran" (jumlah kandidat NMS, BAB III/IV)
+  dan "mode keluaran" (deskriptor I/O, BAB III) karena bukan nama tahap
+  *pipeline* yang diukur; juga deskripsi mekanisme tracker di BAB II §2.5.5
+  yang memakai "pemrosesan piksel" secara generik.
+- `utils/benchmark_analysis/extra_plots.py`: `LATENCY_COMPONENTS` diubah dari
+  "Tracking"/"Output" (sebelumnya "Pelacakan"/"Keluaran"), judul & label sumbu
+  `plot_tracker_latency_comparison()` disamakan ("Latensi tahap tracking...",
+  "Perbandingan Latensi Tahap Tracking..."). Grafik digenerate ulang lewat
+  `.venv-thesis-plots/bin/python utils/benchmark_analysis/extra_plots.py` dan
+  diverifikasi visual (Gambar 3.2 `latency_decomposition_stacked_bar.png`,
+  Gambar 3.4 `tracker_latency_comparison.png`) — label legenda/sumbu baru
+  terbaca jelas, tidak ada angka yang berubah.
+- Verifikasi: `grep -n "tahap pelacakan\|tahap keluaran\|pelacakan (\*tracking\*)\|keluaran (\*output\*)\|pra-pemrosesan\|pasca-pemrosesan\|pascapemrosesan\|prapemrosesan" skripsi/draft/BAB-*.md` mengembalikan kosong di keempat bab.
+
+## 2026-08-23 22:22 WITA — Perbaikan istilah "pemaduan"/"tampilan" jadi *multiplexing*/OSD di BAB I–IV
+
+- Permintaan user: bahasa draf terlalu baku/kaku karena istilah teknis dipaksa
+  di-Indonesiakan menjadi neologisme yang tidak lazim dipakai orang Indonesia
+  (contoh yang diberikan: "pemaduan" untuk *multiplexing*). Aturan yang diminta:
+  istilah teknis yang memang lazim di-Indonesiakan (inferensi, pelacakan,
+  keluaran, pemrosesan, dst.) tetap dipertahankan; istilah yang masih asing
+  dalam penggunaan sehari-hari orang Indonesia dibiarkan memakai bentuk
+  asing/teknisnya (bercetak miring, mengikuti konvensi yang sudah ada).
+- Diganti di seluruh draf: "pemaduan"/"pra-pemaduan" → "*multiplexing*"/
+  "pra-*multiplexing*"; "tampilan"/"pra-tampilan" (sebagai nama tahap OSD)
+  → "OSD"/"pra-OSD". Definisi kanonik istilah 7-tahap *pipeline* di BAB II
+  §2.7 disederhanakan agar tidak lagi menyertakan gloss Indonesia yang
+  redundan (mis. "pemaduan (*multiplexing*)" → cukup "*multiplexing*").
+- Lokasi yang diubah: BAB I §1.5.3 (1 titik), BAB II §2.5.3 (nama elemen
+  *nvstreammux* + label diagram mermaid) dan §2.7 (definisi kanonik), BAB III
+  §3.2.3 (header Tabel 3.2.3 + 6 titik prosa terkait Gambar 3.2), §3.3.3, dan
+  §3.4.2, BAB IV (2 titik pada rangkuman RM1/RM2). Istilah Indonesia lain yang
+  sudah lazim (inferensi, pelacakan, keluaran, pemrosesan, pemetaan,
+  pencuplikan, dll.) sengaja **tidak** diubah — sudah sesuai konvensi lazim.
+- Label legenda grafik `latency_decomposition_stacked_bar.png` (Gambar 3.2) di
+  `utils/benchmark_analysis/extra_plots.py` (`LATENCY_COMPONENTS`) disamakan
+  dengan header Tabel 3.2.3 yang baru ("Pra-multiplexing", "Multiplexing",
+  "Pra-OSD", "OSD"), lalu grafik digenerate ulang lewat
+  `.venv-thesis-plots/bin/python utils/benchmark_analysis/extra_plots.py` agar
+  konsisten dengan prosa — tidak ada angka yang berubah, murni label.
+
+## 2026-08-22 20:22 WITA — BAB III: sisipkan gambar/diagram, tambah 3 grafik baru, perbaiki 2 grafik trade-off
+
+- Konteks: `BAB-3-Hasil-dan-Pembahasan.md` sudah lengkap secara narasi tapi belum pernah memakai
+  sintaks gambar Markdown — 4 plot yang sudah ada di `../eksperimen/plots/` hanya disebut samar di
+  prosa, tidak pernah benar-benar disisipkan. User meminta bab ini dibuat komprehensif dengan
+  gambar/diagram, dikonfirmasi via pertanyaan pilihan: (1) tambah 3 grafik baru dari data yang
+  sudah ada, (2) regenerasi 2 grafik *trade-off* lama karena label titiknya tumpang-tindih.
+- **Perbaikan label 2 grafik *trade-off* lama** (`utils/benchmark_analysis/tradeoff_analysis.py`,
+  fungsi `plot_scatter`): logika `ax.annotate` polos penyebab tumpang-tindih diganti algoritma
+  penghindaran-tabrakan label buatan sendiri (union-find klaster berbasis jarak Euclidean
+  ternormalisasi + penyebaran vertikal + garis penunjuk tipis), tanpa dependensi baru. Grafik
+  `tradeoff_map_vs_fps.png` dan `tradeoff_map_vs_power.png` diregenerasi di tempat — data/angka
+  identik, hanya posisi label yang berubah.
+- **3 grafik baru** dibuat lewat skrip mandiri baru `utils/benchmark_analysis/extra_plots.py` yang
+  membaca langsung `../eksperimen/runtime_summary.csv` (bukan menambah fungsi ke `main()`
+  `aggregate_runtime.py` seperti rencana awal — **deviasi dari rencana**: folder data mentah
+  `data/benchmark/` yang dibutuhkan `aggregate_runtime.py --bench-root` untuk menjalankan ulang
+  `discover_runs()` tidak tersedia di mesin pengembangan ini, sehingga skrip mandiri yang membaca
+  CSV agregat yang sudah ada dipakai sebagai gantinya — sumber angka tetap sama, tidak ada data
+  yang dikarang):
+  - `latency_decomposition_stacked_bar.png` — dekomposisi latensi 7-komponen, 4 model *baseline*
+    (tracker NvDCF), sumber data identik Tabel 3.2.3.
+  - `tracker_latency_comparison.png` — latensi tahap pelacakan NvDCF vs. NvSORT (skala-y
+    logaritmik), 6 model, sumber data identik Tabel 3.4.1.
+  - `energy_per_frame.png` — estimasi energi per-*frame*, 6 model × 2 *tracker*, sumber data
+    identik Tabel 3.4.3 kolom terakhir.
+- **7 gambar disisipkan** ke `BAB-3-Hasil-dan-Pembahasan.md` dengan caption bold "**Gambar 3.N**"
+  (pola baru, mengikuti gaya caption "**Tabel 3.4.x**" yang sudah ada), tiap gambar diikuti 1–2
+  kalimat penunjuk (bukan analisis baru): Gambar 3.1 (boxplot FPS per model) di §3.2.1, Gambar 3.2
+  (dekomposisi latensi) di §3.2.3, Gambar 3.3 (boxplot FPS per tracker) di §3.4.2, Gambar 3.4
+  (perbandingan latensi tracker) di §3.4.1, Gambar 3.5 (energi per frame) di §3.4.3, Gambar 3.6–3.7
+  (trade-off vs. FPS dan vs. daya, hasil regenerasi) di §3.6.1.
+- **1 diagram mermaid baru** (tanpa caption "Gambar", konsisten gaya diagram arsitektur Bab II
+  §2.5.3–§2.5.4) disisipkan di §3.1 setelah paragraf "Data mentah 60 *run* diagregasi...",
+  menggambarkan alur 60 *run* → agregasi per-skenario/data mentah per-*run* → tabel/grafik
+  *runtime* → digabung akurasi KITTI → rangkuman *trade-off*/grafik Pareto.
+- Tidak ada angka eksperimen baru — seluruh grafik baru murni memvisualkan kolom yang sudah ada di
+  `runtime_summary.csv`/`tradeoff_summary.csv`, sumber yang sama dipakai tabel-tabel yang sudah ada
+  di bab ini. Diverifikasi: setiap PNG dibuka visual sebelum disisipkan, grep ulang bab untuk
+  memastikan tidak ada nama file/identifier kode bocor ke prosa pembaca di luar blok gambar dan
+  blockquote provenance (konsisten dengan aturan gaya akademis draf).
+
+---
+
+## 2026-08-22 19:03 WITA — Perluasan tulis-ulang gaya bahasa akademis ke seluruh draf (BAB I–IV)
+
+- User mengonfirmasi bahwa perbaikan gaya "jangan ai slop" (lihat entri 13:32 di bawah,
+  awalnya dibatasi hanya §2.6–§2.7) perlu diperluas ke seluruh draf skripsi ("Bab I etc.").
+- Dikerjakan sendiri: `BAB-1-Pendahuluan.md` bagian "B. Latensi dan Persentil (P95) Latensi" —
+  identifier metrik mentah (`Lat_Infer_ms`, `Lat_Tracker_ms`) dan nama elemen pipeline
+  (`nvstreammux`) diganti frasa deskriptif akademis (2 kemunculan).
+- Dikerjakan via 3 agen paralel (fork), masing-masing dibekali §2.6–§2.7 sebagai contoh gaya
+  target dan instruksi eksplisit untuk tidak mengubah/menghapus angka hasil eksperimen apa pun:
+  - `BAB-2-Metode-Penelitian.md` §2.1–§2.5 (termasuk §2.5.1–§2.5.5): ±30 edit — path config
+    (`config/pgie_yolov8n_kitti.txt`, `tracker_nvdcf.yml`, dll.), path kode sumber
+    (`src/main.cpp`, `src/efficientnms_parser.cpp`), path dokumentasi internal
+    (`../../docs/...`), nama elemen GStreamer bertanda kutip siku, dan referensi silang antar-
+    bab bergaya nama berkas markdown — semua diganti prosa akademis atau istilah dicetak
+    miring. Dua diagram mermaid (§2.5.3, §2.5.4) turut dibersihkan dari label berkas literal.
+    Kolom tabel "File config" (§2.5.2, §2.5.5) yang murni berisi path berkas dihapus karena
+    tidak memuat data eksperimen; data model/parameter/GFLOPs pada tabel yang sama tetap utuh.
+  - `BAB-3-Hasil-dan-Pembahasan.md` (§3.1–§3.6): seluruh identifier metrik mentah, nama
+    skrip/berkas CSV/PNG, dan path dokumentasi internal diganti prosa/label tabel deskriptif.
+    Seluruh nilai numerik, hash commit, dan catatan metodologis (termasuk penjelasan kaveat
+    status penguncian *clock* yang tampak gagal padahal berhasil) diverifikasi tetap utuh.
+  - `BAB-4-Kesimpulan-dan-Saran.md`: 14 edit — identifier metrik mentah, nama *plugin*/
+    parameter konfigurasi, dan referensi silang antar-bab diganti prosa akademis; seluruh
+    nilai numerik dan kesimpulan tetap utuh.
+- Blockquote catatan provenans/status di bagian atas tiap berkas (BAB I, II, III) **tidak**
+  disentuh — tetap dianggap metadata penulisan internal, bukan teks pembaca skripsi.
+- Diverifikasi dengan sapuan grep di seluruh 4 berkas BAB: nol kemunculan tersisa untuk pola
+  path relatif, nama berkas berformat kode, dan identifier metrik mentah di teks isi bab.
+
+## 2026-08-22 13:32 WITA — Tulis-ulang gaya bahasa §2.6–§2.7 (BAB-2-Metode-Penelitian.md)
+
+- Atas permintaan user ("jangan ai slop"), §2.6 Pengujian dan §2.7 Metrik Evaluasi
+  ditulis ulang agar bergaya akademis murni: menghapus seluruh identifier kode mentah
+  (mis. `Lat_Tracker_ms`, `Lat_Infer_ms`, `fps.csv`, `hardware_analysis.csv`) dan
+  path relatif ke dokumentasi internal (`../../docs/...`) dari teks naratif — diganti
+  dengan deskripsi deskriptif (mis. "latensi tahap pelacakan", "log utilisasi
+  perangkat keras").
+- Daftar *bullet* nama skrip di "Tooling otomasi pengujian" (`scripts/build.sh`,
+  `scripts/run_benchmark.sh`, dst.) diringkas jadi paragraf naratif "Instrumentasi dan
+  otomasi pengujian" yang menjelaskan fungsinya tanpa menyebut nama berkas.
+- Referensi silang antarbab yang semula ditulis sebagai nama berkas markdown
+  (`` `BAB-1-Pendahuluan.md` §1.6 ``) diubah ke gaya sitasi akademis biasa ("Bab I
+  §1.6").
+- Nama pustaka/perangkat lunak (tegrastats, pycocotools, Ultralytics) tetap disebut
+  (perlu untuk reproduksibilitas metodologis) tetapi dideskripsikan secara naratif,
+  bukan sebagai token kode.
+- Tidak ada perubahan makna/isi metodologis — murni perubahan gaya penulisan agar
+  sesuai konvensi akademis skripsi, bukan dokumentasi teknis/README.
+
+## 2026-08-22 13:15 WITA — Pisahkan §2.6 Pengujian → §2.6 + §2.7 Metrik Evaluasi (BAB-2-Metode-Penelitian.md)
+
+- Atas permintaan user, konten "Metrik yang diukur", paragraf metrik perangkat keras, dan
+  "Kriteria evaluasi" (+ tabel) — semula teks *run-in* di dalam §2.6 Pengujian — dipindah
+  dan direstrukturisasi menjadi subbab baru **§2.7 Metrik Evaluasi**, agar konsisten
+  dengan pola penomoran subbab bernomor di tempat lain BAB II (§2.5.1–§2.5.5) dan
+  memisahkan "prosedur pengujian" (§2.6: *tooling*, skenario) dari "metrik & kriteria
+  penilaian" (§2.7).
+- §2.7 dipecah jadi dua sub-kelompok: "Metrik performa *runtime* dan perangkat keras"
+  (FPS, latensi per-komponen + rasionalisasi P95, metrik `tegrastats`) dan "Metrik
+  kualitas deteksi" (precision/recall/mAP, rasionalisasi *sanity-check* FP16 vs. FP32).
+- Menambahkan sitasi akademis (semua ≥2022, diambil dari daftar referensi yang sudah ada
+  di `../journal/daftar-referensi.md` — tidak ada sitasi baru yang ditambahkan) untuk
+  memperkuat beberapa klaim yang sebelumnya tidak bersitasi: Costa dkk. (2025) untuk
+  ambang *real-time* ≥30 FPS, Nigade dkk. (2024) untuk rasionalisasi pelaporan latensi
+  P95, Suder dkk. (2023) untuk preseden metrik daya `tegrastats`, Guerrouj dkk. (2025)
+  untuk kekhawatiran *trade-off* presisi FP16, dan mengulang sitasi MLPerf Mobile
+  (Janapa Reddi dkk., 2022) langsung di tabel kriteria RM3 (sebelumnya hanya disebut
+  tanpa sitasi eksplisit di baris tabel tsb.).
+- Memperbarui kolom Relevansi di `../journal/daftar-referensi.md` untuk kelima sitasi di
+  atas agar mencantumkan pemakaian baru di BAB II §2.7.
+- Menambahkan catatan provenance di header BAB-2-Metode-Penelitian.md yang
+  mendokumentasikan bahwa pemecahan §2.6→§2.7 ini editorial (di luar naskah PDF sumber),
+  tanpa penghapusan konten substantif.
+- Tidak ada angka eksperimen baru yang diklaim; hanya reorganisasi teks metodologi dan
+  penambahan sitasi pendukung.
+
+## 2026-08-22 12:41 WITA — Ganti poin 7 §1.6 Ruang Lingkup Penelitian
+
+- Atas permintaan user, poin 7 (batasan lokasi & waktu pengujian) di
+  `draft/BAB-1-Pendahuluan.md` §1.6 dinilai tidak perlu dan diganti dengan poin batasan
+  lain: kamera stereo (ZED) yang dipakai sebagai sumber video hanya dimanfaatkan sebagai
+  sumber aliran 2D, kemampuan estimasi jarak berbasis stereo tidak dimanfaatkan/tidak
+  menjadi bagian penelitian. Fakta ini digrounding ke
+  `../docs/08_limitations_future_work.md` poin 1 (sudah menyebutkan hal yang sama sebagai
+  limitasi terdokumentasi) — bukan angka/klaim baru, murni pemindahan poin batasan yang
+  sudah ada di dokumentasi proyek ke §1.6.
+
+## 2026-08-22 12:35 WITA — Tulis ulang §1.6 Ruang Lingkup Penelitian, gaya lebih formal & mandiri
+
+- Menulis ulang `draft/BAB-1-Pendahuluan.md` §1.6 Ruang Lingkup Penelitian atas permintaan
+  user, mengikuti instruksi ketat: bahasa Indonesia baku/formal, tiap poin diuraikan
+  sebagai kalimat lengkap dan lugas (bukan daftar istilah singkat), tanpa rujukan
+  eksplisit ke bagian dokumen lain (dihapus semua notasi silang seperti "(§1.3)" dan
+  "lihat Bab II §2.5.5" yang ada di versi sebelumnya), dan tanpa singkatan pemberi contoh
+  seperti "mis.", "dll.", "dsb.", atau "yaitu"/"yakni" (diganti jadi "berupa").
+- User sempat menolak draf pertama (terlalu panjang, tiap poin jadi satu paragraf besar)
+  dan memberi contoh gaya skripsi rekan (tiap poin 1–2 kalimat ringkas, format serupa
+  daftar bernomor asli). Draf kedua ditulis mengikuti gaya itu: tujuh poin ringkas
+  mencakup batasan perangkat (Jetson Orin Nano 4GB, bukan AGX Orin/DLA), variabel yang
+  dibandingkan (optimasi NMS paralel EfficientNMS dan pemilihan tracker NvDCF/NvSORT),
+  batasan objek (model pre-trained, tanpa pelatihan ulang), batasan cakupan sistem (hanya
+  pipeline video, bukan integrasi kendaraan), batasan evaluasi tracking (efisiensi
+  komputasi saja, bukan akurasi/ID switch/MOTA, karena tidak ada dataset tracking
+  berlabel), batasan presisi numerik (FP16 saja), serta batasan lokasi & waktu (Departemen
+  Teknik Informatika Unhas, Mei–Agustus 2026).
+- Seluruh fakta yang dipakai (spesifikasi Jetson Orin Nano, daftar model YOLO, metrik
+  efisiensi tracker, alasan ketiadaan dataset tracking berlabel, presisi FP16) digrounding
+  ke isi `draft/BAB-2-Metode-Penelitian.md` §2.1/§2.2/§2.5.2/§2.5.5/§2.6 yang sudah
+  tersinkronisasi dengan naskah PDF sebelumnya — tidak ada angka/fakta baru yang
+  ditambahkan, murni penulisan ulang gaya dan struktur kalimat.
+
 ## 2026-08-21 16:29 WITA — Tambah diagram mermaid proses fusi graph EfficientNMS di BAB II §2.5.4
 
 - Menambahkan diagram mermaid kedua di §2.5.4, kali ini fokus ke **proses fusi graph**
