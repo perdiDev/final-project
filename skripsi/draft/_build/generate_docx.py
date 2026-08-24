@@ -10,7 +10,9 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
-OUT_PATH = os.path.join(os.path.dirname(BUILD_DIR), "Skripsi-Gabungan-BAB-I-IV.docx")
+DRAFT_DIR = os.path.dirname(BUILD_DIR)
+OUT_PATH = os.path.join(DRAFT_DIR, "Skripsi-Gabungan-BAB-I-IV.docx")
+DIAGRAMS_DIR = os.path.join(BUILD_DIR, "diagrams")
 
 CHAPTER_FILES = [
     f"{BUILD_DIR}/BAB-1.clean.md",
@@ -20,6 +22,23 @@ CHAPTER_FILES = [
 ]
 
 TOKEN_RE = re.compile(r"(\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`)")
+IMAGE_LINE_RE = re.compile(r"^!\[(.*?)\]\((.*?)\)$")
+
+# Mermaid diagrams cannot be rendered natively by python-docx; each was hand-translated
+# to Graphviz DOT (see diagrams/*.dot) and pre-rendered to PNG (diagrams/*.png) because
+# the sandbox has no network access for mermaid-cli/puppeteer. Match by a unique
+# substring of the mermaid source so the right image is picked regardless of which
+# chapter/position it appears in.
+MERMAID_IMAGE_MAP = [
+    ("Kamera ZED", "pipeline_deepstream.png",
+     "Diagram alur pipeline DeepStream inti beserta thread pencatatan benchmark/deteksi dan parser tegrastats."),
+    ("NMS bawaan nvinfer", "nms_position.png",
+     "Perbandingan posisi tahap NMS pada varian baseline versus EfficientNMS_TRT di dalam pipeline."),
+    ("Build-time - sekali, offline", "nms_buildtime_runtime.png",
+     "Alur fusi EfficientNMS_TRT pada tahap build-time (offline) dan eksekusinya pada tahap runtime (per frame)."),
+    ("Desain eksperimen", "measurement_structure.png",
+     "Struktur pengukuran: dari desain eksperimen menuju kelompok metrik runtime dan rumusan masalah yang dijawab."),
+]
 
 
 # ---------- Markdown -> block parsing ----------
@@ -29,6 +48,9 @@ def parse_blocks(text):
     current_para = []
     current_list = None  # [type, [items]]
     current_table = []
+    in_fence = False
+    fence_lang = ""
+    fence_lines = []
 
     def flush_para():
         nonlocal current_para
@@ -55,8 +77,33 @@ def parse_blocks(text):
 
     for raw in text.split("\n"):
         line = raw.rstrip("\n")
+
+        if in_fence:
+            if line.strip().startswith("```"):
+                in_fence = False
+                if fence_lang.strip().lower() == "mermaid":
+                    blocks.append(("mermaid", "\n".join(fence_lines)))
+                else:
+                    blocks.append(("code", "\n".join(fence_lines)))
+                fence_lines = []
+                fence_lang = ""
+            else:
+                fence_lines.append(line)
+            continue
+
         if line.strip() == "":
             flush_all()
+            continue
+        if line.strip().startswith("```"):
+            flush_all()
+            in_fence = True
+            fence_lang = line.strip()[3:]
+            fence_lines = []
+            continue
+        img_match = IMAGE_LINE_RE.match(line.strip())
+        if img_match:
+            flush_all()
+            blocks.append(("image", (img_match.group(1), img_match.group(2))))
             continue
         if line.startswith("# "):
             flush_all()
@@ -94,6 +141,9 @@ def parse_blocks(text):
                 flush_list()
             current_para.append(line.strip())
 
+    # unterminated fence (shouldn't happen in well-formed drafts) -- flush as code
+    if fence_lines:
+        blocks.append(("code", "\n".join(fence_lines)))
     flush_all()
     return blocks
 
@@ -179,7 +229,7 @@ def add_title_page(doc):
         doc.add_paragraph()
     p("ANALISIS OPTIMASI REAL-TIME PIPELINE NVIDIA DEEPSTREAM UNTUK APLIKASI "
       "ADAS BERBASIS EDGE DEVICE", size=16, bold=True, space_after=6)
-    p("(Naskah gabungan Bab I–IV — draf untuk diperiksa dosen pembimbing)", size=11,
+    p("(Naskah gabungan Bab I sampai IV, draf untuk diperiksa dosen pembimbing)", size=11,
       italic=True, space_after=0)
     for _ in range(4):
         doc.add_paragraph()
@@ -315,6 +365,72 @@ def add_table_block(doc, table_lines):
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
 
+def add_code_block(doc, code_text):
+    para = doc.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    para.paragraph_format.space_before = Pt(6)
+    para.paragraph_format.space_after = Pt(6)
+    lines = code_text.split("\n")
+    for i, line in enumerate(lines):
+        if i > 0:
+            para.add_run().add_break()
+        run = para.add_run(line)
+        run.font.name = "Consolas"
+        run.font.size = Pt(11)
+
+
+def _resolve_mermaid_image(mermaid_source):
+    for marker, filename, caption in MERMAID_IMAGE_MAP:
+        if marker in mermaid_source:
+            return os.path.join(DIAGRAMS_DIR, filename), caption
+    return None, None
+
+
+def add_mermaid_block(doc, mermaid_source):
+    image_path, caption = _resolve_mermaid_image(mermaid_source)
+    if image_path and os.path.exists(image_path):
+        add_image_block(doc, image_path, caption)
+    else:
+        # Fallback: no pre-rendered match found -- keep the raw source visible
+        # (as a monospace block) rather than silently dropping the diagram.
+        note = doc.add_paragraph()
+        note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        note_run = note.add_run(
+            "[Diagram Mermaid tanpa render gambar yang cocok -- sumber ditampilkan mentah]"
+        )
+        note_run.italic = True
+        note_run.font.name = "Times New Roman"
+        note_run.font.size = Pt(10)
+        add_code_block(doc, mermaid_source)
+
+
+def add_image_block(doc, image_path, caption=None, base_dir=None):
+    if not os.path.isabs(image_path):
+        image_path = os.path.normpath(os.path.join(base_dir or DRAFT_DIR, image_path))
+    if not os.path.exists(image_path):
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(f"[Gambar tidak ditemukan: {image_path}]")
+        run.italic = True
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(11)
+        return
+    pic_para = doc.add_paragraph()
+    pic_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pic_para.paragraph_format.space_before = Pt(6)
+    pic_para.paragraph_format.space_after = Pt(2)
+    run = pic_para.add_run()
+    run.add_picture(image_path, width=Cm(14))
+    if caption:
+        cap_para = doc.add_paragraph()
+        cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cap_para.paragraph_format.space_after = Pt(10)
+        cap_run = cap_para.add_run(caption)
+        cap_run.italic = True
+        cap_run.font.name = "Times New Roman"
+        cap_run.font.size = Pt(10.5)
+
+
 def render_blocks(doc, blocks, skip_first_h1=False):
     first_h1_seen = False
     for kind, data in blocks:
@@ -334,46 +450,52 @@ def render_blocks(doc, blocks, skip_first_h1=False):
             add_list_block(doc, data)
         elif kind == "table":
             add_table_block(doc, data)
+        elif kind == "code":
+            add_code_block(doc, data)
+        elif kind == "mermaid":
+            add_mermaid_block(doc, data)
+        elif kind == "image":
+            alt, path = data
+            add_image_block(doc, path, caption=alt, base_dir=DRAFT_DIR)
 
 
 VERIFICATION_NOTES = [
     ("Prioritas tinggi",
-     "Penggantian rumusan masalah #3 (sumbu Deep Learning Accelerator/DLA → "
+     "Penggantian rumusan masalah #3 (sumbu Deep Learning Accelerator/DLA menjadi "
      "perbandingan efisiensi komputasi algoritma tracking NvDCF vs. NvSORT) pada "
-     "Bab I §1.2, §1.3, dan §1.5 belum dikonfirmasi ke dosen pembimbing. Penulis "
-     "memilih melanjutkan penulisan draf terlebih dahulu (hingga Bab IV selesai), "
-     "dengan rencana merevisi pada bimbingan berikutnya apabila perubahan ini tidak "
-     "disetujui."),
+     "Bab I belum dikonfirmasi ke dosen pembimbing. Penulis memilih melanjutkan "
+     "penulisan draf terlebih dahulu hingga Bab IV selesai, dengan rencana merevisi "
+     "pada bimbingan berikutnya apabila perubahan ini tidak disetujui."),
     ("Prioritas tinggi",
-     "Verifikasi akurasi as-deployed FP16 (Bab III §3.4) baru selesai pada tahap "
-     "infrastruktur kode (probe dump deteksi, konversi video evaluasi, dan skrip "
-     "penghitungan mAP). Ekspor dataset validasi ke perangkat Jetson, eksekusi "
-     "pengujian yang sesungguhnya, dan pembaruan angka hasil belum dilakukan. Bab IV "
-     "(§4.1) sudah mencantumkan keterbatasan ini secara eksplisit, sehingga kesimpulan "
+     "Verifikasi akurasi as-deployed FP16 pada pembahasan hasil baru selesai pada "
+     "tahap infrastruktur kode (probe dump deteksi, konversi video evaluasi, dan "
+     "skrip penghitungan mAP). Ekspor dataset validasi ke perangkat Jetson, eksekusi "
+     "pengujian yang sesungguhnya, dan pembaruan angka luaran belum dilakukan. Bab IV "
+     "sudah mencantumkan keterbatasan ini secara eksplisit, sehingga kesimpulan "
      "terkait trade-off akurasi masih bersyarat pada proxy FP32 dan tidak diklaim "
      "pasti."),
     ("Prioritas sedang",
-     "Identifikasi varian Jetson Orin Nano 4GB pada Bab II §2.2.1 diturunkan dari "
-     "pembacaan mode daya maksimum (nvpmodel -q), bukan dari inspeksi label fisik "
-     "modul. Verifikasi independen (mis. lewat pembacaan device-tree perangkat) "
-     "belum dilakukan."),
+     "Identifikasi varian Jetson Orin Nano 4GB pada Bab II diturunkan dari pembacaan "
+     "mode daya maksimum (nvpmodel -q), bukan dari inspeksi label fisik modul. "
+     "Verifikasi independen (mis. lewat pembacaan device-tree perangkat) belum "
+     "dilakukan."),
     ("Prioritas sedang",
      "Versi persis GStreamer, GLib, dan CUDA Toolkit yang terpasang pada perangkat "
-     "pengujian (Bab II §2.2.2) belum dicatat sebagai metadata reproducibility "
-     "(mis. lewat gst-inspect-1.0 --version, nvcc --version, dpkg -l)."),
+     "pengujian belum dicatat sebagai metadata reproducibility (mis. lewat "
+     "gst-inspect-1.0 --version, nvcc --version, dpkg -l)."),
     ("Prioritas sedang",
      "Hyperparameter pelatihan model pretrained (rasio split, seed, jumlah epoch, "
-     "ukuran batch, optimizer, augmentasi, sumber bobot pretrained — Bab II §2.2.3) "
-     "belum dipindahkan dari catatan proses pelatihan ke dokumentasi resmi proyek."),
+     "ukuran batch, optimizer, augmentasi, sumber bobot pretrained) belum "
+     "dipindahkan dari catatan proses pelatihan ke dokumentasi resmi proyek."),
     ("Prioritas sedang",
-     "Ambang selisih mAP FP16-vs-FP32 yang dianggap “dapat diabaikan” (Bab II §2.6.2) "
-     "belum dikunci ke angka final — akan ditentukan berdasarkan referensi literatur "
+     "Ambang selisih mAP FP16-vs-FP32 yang dianggap “dapat diabaikan” belum "
+     "dikunci ke angka final, akan ditentukan berdasarkan referensi literatur "
      "setelah data aktual tersedia, untuk menghindari penyesuaian kriteria setelah "
      "melihat hasil. Ambang FPS target real-time sudah dikunci ke 30 FPS."),
     ("Prioritas rendah",
-     "Nama laboratorium spesifik tempat pelaksanaan pengujian perangkat keras (Bab II "
-     "§2.1) belum dikonfirmasi penulis — belum tercatat secara eksplisit di dokumen "
-     "proyek mana pun."),
+     "Nama laboratorium spesifik tempat pelaksanaan pengujian perangkat keras belum "
+     "dikonfirmasi penulis, belum tercatat secara eksplisit di dokumen proyek mana "
+     "pun."),
     ("Prioritas rendah",
      "Satu sitasi pada Daftar Pustaka proposal awal, yaitu Wu dkk. (2024, “Road "
      "object detection based on improved YOLOv8 for real-time traffic scenarios”, "
@@ -384,9 +506,9 @@ VERIFICATION_NOTES = [
      "karena merupakan bagian dari Daftar Pustaka yang telah disetujui pada seminar "
      "proposal."),
     ("Prioritas rendah",
-     "Tujuh sitasi pada Bab I §1.1 (Choi, Nigade, Zhang, Ruiz-Barroso, Suder, "
-     "Seyfipoor, Shah) masih dirangkum setingkat klaim tematik mengikuti proposal; "
-     "perlu dibaca ulang dari sumber aslinya apabila versi final membutuhkan ringkasan "
+     "Tujuh sitasi pada Bab I (Choi, Nigade, Zhang, Ruiz-Barroso, Suder, Seyfipoor, "
+     "Shah) masih dirangkum setingkat klaim tematik mengikuti proposal, perlu dibaca "
+     "ulang dari sumber aslinya apabila versi final membutuhkan ringkasan "
      "metodologi/hasil yang lebih dalam per jurnal."),
 ]
 

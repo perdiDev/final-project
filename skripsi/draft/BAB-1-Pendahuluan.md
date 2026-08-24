@@ -1,4 +1,4 @@
-# BAB I — PENDAHULUAN
+# BAB I PENDAHULUAN
 
 > Status: disinkronkan dengan naskah PDF menuju semhas (2026-08-21), menggantikan draf
 > sebelumnya yang diadaptasi dari `../Proposal/Proposal Final Perdi - AGX Orin ADAS-1.pdf`.
@@ -96,7 +96,7 @@ tetap berada dalam batasan konsumsi daya, suhu operasi, dan kapasitas pemrosesan
 jauh lebih ketat dibandingkan platform *edge* kelas atas (mis. Jetson AGX Orin) maupun
 server kelas pusat. Kajian terhadap perangkat *embedded* menunjukkan bahwa pemrosesan
 video *real-time* selalu menuntut kompromi antara kecepatan, efisiensi energi, dan
-stabilitas kinerja, terutama ketika sistem harus mempertahankan hasil yang konsisten pada
+stabilitas kinerja, terutama ketika sistem harus mempertahankan luaran yang konsisten pada
 beban kerja yang berubah-ubah (Suder et al., 2023). Dalam konteks aplikasi keselamatan,
 kompromi semacam ini menjadi sangat penting karena keterbatasan sumber daya dapat
 langsung berpengaruh pada keterlambatan deteksi, penurunan laju pemrosesan, dan
@@ -111,7 +111,7 @@ memenuhi batas waktu dapat berimplikasi pada kegagalan sistem secara fungsional
 (Seyfipoor et al., 2026). Hal ini menegaskan bahwa aplikasi keselamatan memerlukan
 arsitektur yang tidak hanya cepat, tetapi juga stabil, terprediksi, dan efisien dalam
 mengelola prioritas pemrosesan. Dengan kata lain, keandalan ADAS tidak dapat dilepaskan
-dari kemampuan sistem untuk menjaga konsistensi waktu proses dalam kondisi beban tinggi —
+dari kemampuan sistem untuk menjaga konsistensi waktu proses dalam kondisi beban tinggi,
 baik beban tersebut berasal dari tahap deteksi objek (inferensi model dan *post-processing*
 NMS-nya) maupun dari tahap asosiasi objek antar-frame (*tracking*) yang menjaga identitas
 objek tetap konsisten sepanjang waktu.
@@ -121,7 +121,7 @@ pipeline* pada platform *embedded* menjadi relevan dan mendesak untuk dilakukan,
 khususnya pada konteks ADAS berbasis Jetson Orin Nano. Permasalahan yang dihadapi bukan
 semata-mata pada kemampuan mendeteksi objek, melainkan pada bagaimana sistem dapat
 mempertahankan kecepatan, kestabilan, dan efisiensi pemrosesan secara simultan dalam
-skenario operasi yang menuntut respons segera — pada setiap tahap pipeline, mulai dari
+skenario operasi yang menuntut respons segera, pada setiap tahap pipeline, mulai dari
 inferensi deteksi, *post-processing* (NMS), hingga *tracking*. Oleh karena itu, penelitian
 ini diarahkan untuk memahami dan menganalisis faktor-faktor yang memengaruhi kinerja
 *real-time pipeline* agar sistem ADAS dapat memenuhi kebutuhan keselamatan berkendara
@@ -254,10 +254,10 @@ sebelumnya, memberikan identitas unik (ID) yang konsisten.
 Algoritma MOT paling efisien berakar pada paradigma *Tracking-by-Detection* yang
 utamanya menggunakan dua komponen matematis:
 
-1. **Kalman Filter** — sebuah algoritma estimasi rekursif yang memprediksi keadaan
+1. **Kalman Filter**: sebuah algoritma estimasi rekursif yang memprediksi keadaan
    kinematik objek di masa depan (posisi dan kecepatan) berdasarkan pengukuran beruntun
    yang mengandung derau (*noise*).
-2. **Hungarian Algorithm** — algoritma optimasi kombinatorial untuk memecahkan masalah
+2. **Hungarian Algorithm**: algoritma optimasi kombinatorial untuk memecahkan masalah
    penugasan (*assignment problem*). Dalam MOT, algoritma ini digunakan untuk
    mencocokkan (*bipartite matching*) prediksi lokasi Kalman Filter dengan lokasi
    *bounding box* deteksi baru, biasanya menggunakan matriks jarak berbasis IoU atau
@@ -269,13 +269,13 @@ DeepStream menyediakan elemen `nvtracker` yang mendukung berbagai profil pelacak
 Penelitian ini mengevaluasi dua algoritma pelacakan dengan pendekatan desain yang
 mewakili kedua ujung spektrum beban komputasi:
 
-- **NvSORT** (*Simple Online and Realtime Tracking*) — pelacak berbasis *motion-only*
+- **NvSORT** (*Simple Online and Realtime Tracking*): pelacak berbasis *motion-only*
   murni yang hanya mengandalkan Kalman Filter dan Hungarian Algorithm pada properti
   koordinat spasial tanpa mengekstraksi atau memproses data piksel gambar sama sekali.
   Hal ini membuatnya beroperasi sangat cepat dan efisien terhadap utilisasi CPU/GPU,
   dengan kompromi berkurangnya kemampuan membedakan objek saat terjadi oklusi silang
   yang kompleks (Shin & Li, 2023).
-- **NvDCF** (*Discriminative Correlation Filter*) — pelacak hibrida *feature-based* yang
+- **NvDCF** (*Discriminative Correlation Filter*): pelacak hibrida *feature-based* yang
   memelajari ciri visual khusus (*learned visual features*) dari setiap target secara
   *real-time*. NvDCF memproses area piksel dalam *bounding box* untuk membuat filter
   korelasi, yang memungkinkannya melacak objek saat detektor gagal atau tertutup
@@ -306,11 +306,11 @@ komputasi, kelancaran eksekusi, serta mempertahankan akurasi dasar (Nigade et al
 **A. Throughput (FPS)**
 
 Laju bingkai per detik (*Frames Per Second*) mengukur agregat volume pemrosesan.
-Diformulasikan secara konseptual dari total latensi *end-to-end* rata-rata sistem per
+Diformulasikan secara konseptual dari total latensi *end-to-end* rerata sistem per
 *frame*:
 
 ```
-FPS = 1 / (rata-rata t_e2e dalam detik)
+FPS = 1 / (rerata t_e2e dalam detik)
 ```
 
 di mana sistem dikategorikan *real-time* jika nilai laju pemrosesan stabil pada target
@@ -333,10 +333,10 @@ Untuk memastikan optimasi presisi komputasi (FP16) dan implementasi NMS tidak me
 fungsionalitas pengenalan (*sanity-check*), akurasi diukur berdasar matriks kebingungan
 (*confusion matrix*):
 
-- **Precision (P)** — proporsi deteksi yang relevan (benar): `P = TP / (TP + FP)`
-- **Recall (R)** — proporsi target asli yang berhasil ditemukan: `R = TP / (TP + FN)`
-- **mean Average Precision (mAP)** — luas area di bawah kurva *Precision-Recall*
-  rata-rata untuk seluruh kelas objek, dihitung melintasi batas ambang batas (IoU = 0,5
+- **Precision (P)**: proporsi deteksi yang relevan (benar): `P = TP / (TP + FP)`
+- **Recall (R)**: proporsi target asli yang berhasil ditemukan: `R = TP / (TP + FN)`
+- **mean Average Precision (mAP)**: luas area di bawah kurva *Precision-Recall*
+  rerata untuk seluruh kelas objek, dihitung melintasi batas ambang batas (IoU = 0,5
   untuk mAP50, dan rentang IoU = 0,5–0,95 untuk mAP50-95).
 
 > `[VERIFIKASI]` Seluruh isi §1.2 di atas disalin mengikuti teks PDF persis
@@ -375,16 +375,16 @@ Penelitian ini memiliki tujuan antara lain:
 
 ## 1.5 Manfaat
 
-1. **Manfaat Teoritis** — Menjadi referensi ilmiah mengenai optimasi *pipeline*
+1. **Manfaat Teoritis**: Menjadi referensi ilmiah mengenai optimasi *pipeline*
    pemrosesan video *real-time* pada sistem *edge* untuk aplikasi ADAS, khususnya dalam
    penerapan Nvidia DeepStream, NMS paralel berbasis TensorRT plugin (EfficientNMS),
    serta evaluasi efisiensi komputasi pemilihan algoritma *tracking* pada perangkat
    Jetson Orin Nano.
-2. **Manfaat Praktis** — Memberikan pedoman teknis bagi pengembang sistem *embedded* dan
+2. **Manfaat Praktis**: Memberikan pedoman teknis bagi pengembang sistem *embedded* dan
    ADAS mengenai konfigurasi *pipeline* yang paling optimal untuk mencapai kinerja
    *real-time*, terutama dalam aspek latensi, *throughput*, dan stabilitas pemrosesan
    pada perangkat Jetson Orin Nano.
-3. **Manfaat Institusional** — Berkontribusi dalam pengembangan riset terapan di bidang
+3. **Manfaat Institusional**: Berkontribusi dalam pengembangan riset terapan di bidang
    Visi Komputer, *Edge* AI, dan *Embedded Systems*, serta memperkuat kapasitas institusi
    dalam kajian pemanfaatan teknologi akselerasi perangkat keras NVIDIA pada sistem
    cerdas berbasis video.
@@ -411,7 +411,7 @@ berikut:
    lain di luar komponen persepsi visual.
 5. Evaluasi algoritma pelacakan objek dibatasi pada aspek efisiensi komputasi berupa laju
    bingkai per detik, latensi komponen pelacak, dan utilisasi sumber daya perangkat
-   keras, dan tidak mencakup evaluasi kualitas maupun akurasi hasil pelacakan, karena
+   keras, dan tidak mencakup evaluasi kualitas maupun akurasi luaran pelacakan, karena
    penelitian ini tidak memiliki akses pada kumpulan data pelacakan objek berlabel dengan
    identitas objek yang konsisten antar-bingkai.
 6. Seluruh pengujian dijalankan pada satu tingkat presisi numerik tunggal berupa setengah

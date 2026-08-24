@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Optional, Sequence
 
 import matplotlib
 
@@ -24,7 +24,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-CATEGORICAL_COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
+# Nama tampilan, urutan model, dan warna tracker diimpor dari extra_plots.py supaya
+# konsisten dengan grafik lain di BAB III (mis. TRACKER_COLORS biru=NvDCF/merah=NvSORT
+# dipakai juga pada tracker_latency_comparison.png dan energy_per_frame.png).
+from extra_plots import ALL_MODELS_ORDER, DISPLAY_NAMES, TRACKER_COLORS
 
 # Kolom rail daya total (dipilih sebagai representasi "Avg Power") — sesuaikan dengan
 # nama rail yang benar-benar muncul di runtime_summary.csv Anda (lihat catatan
@@ -58,126 +61,100 @@ def build_tradeoff_table(runtime_summary: pd.DataFrame, accuracy: pd.DataFrame) 
     return merged
 
 
-def _place_labels_without_overlap(
-    points: Sequence[tuple],
-    x_span: float,
-    y_span: float,
-    cluster_threshold: float = 0.1,
-    row_gap_frac: float = 0.065,
-) -> List[float]:
-    """Hitung offset-y label supaya tidak tumpang-tindih pada titik yang berdekatan.
-
-    `points` berisi tuple (x, y, text) terurut sembarang. Karena beberapa skenario
-    (mis. varian *baseline* vs. EfficientNMS berbobot sama) berbagi akurasi/FPS/daya
-    yang nyaris identik, titik-titik ini divisualisasikan sebagai satu marker yang
-    "menumpuk" rapat. Titik dikelompokkan memakai jarak Euclidean **ternormalisasi**
-    (x dan y masing-masing dibagi rentangnya sendiri, agar kedua sumbu sebanding
-    meski satuan/skalanya berbeda jauh, mis. FPS vs. mAP) via *union-find* sederhana,
-    lalu label dalam satu klaster disebar vertikal berjarak tetap
-    `row_gap_frac * y_span`, dipusatkan pada rata-rata y klaster tersebut. Klaster
-    berisi satu titik tidak digeser sama sekali. Mengembalikan daftar offset-y
-    (data-unit) sejajar urutan input `points`.
-    """
-    n = len(points)
-    x_span = max(x_span, 1e-9)
-    y_span = max(y_span, 1e-9)
-    parent = list(range(n))
-
-    def _find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def _union(i: int, j: int) -> None:
-        ri, rj = _find(i), _find(j)
-        if ri != rj:
-            parent[ri] = rj
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            dx = (points[i][0] - points[j][0]) / x_span
-            dy = (points[i][1] - points[j][1]) / y_span
-            if (dx * dx + dy * dy) ** 0.5 < cluster_threshold:
-                _union(i, j)
-
-    clusters: Dict[int, List[int]] = {}
-    for i in range(n):
-        clusters.setdefault(_find(i), []).append(i)
-
-    offsets = [0.0] * n
-    row_gap = row_gap_frac * y_span
-    for members in clusters.values():
-        if len(members) < 2:
-            continue
-        members = sorted(members, key=lambda i: -points[i][1])
-        base_y = sum(points[i][1] for i in members) / len(members)
-        for rank, idx in enumerate(members):
-            slot = rank - (len(members) - 1) / 2
-            offsets[idx] = (base_y + slot * row_gap) - points[idx][1]
-    return offsets
-
-
-def plot_scatter(
+def plot_tradeoff_dumbbell(
     df: pd.DataFrame,
     x_col: str,
     y_col: str,
     out_path: Path,
     title: str,
     xlabel: str,
-    ylabel: str,
+    delta_fmt: str = "{:+.1f}",
 ) -> None:
+    """Dumbbell plot: satu baris per model, dua titik (NvDCF/NvSORT) dihubungkan garis.
+
+    `y_col` (mAP50-95) tidak berubah antar-*tracker* untuk model yang sama — bobot
+    deteksi identik, EfficientNMS/*tracker* hanya mengubah eksekusi *runtime*, bukan
+    akurasi (lihat catatan Tabel 3.5.1). Karena itu memplot ke-12 baris pada satu
+    sumbu-y kontinu (pendekatan lama) hanya menumpuk titik yang sebenarnya berbagi
+    y persis sama, dipisahkan artifisial lewat garis pemandu label. Bentuk yang
+    cocok untuk struktur data ini adalah **pasangan sebelum/sesudah per model**: satu
+    baris kategorikal per model (diurutkan naik menurut akurasi), dua titik
+    (NvDCF/NvSORT, warna tetap konsisten dengan grafik lain di bab ini) dihubungkan
+    garis yang panjangnya *langsung* menunjukkan selisih `x_col` akibat pergantian
+    *tracker* — persis pola yang dibahas di teks (§3.6.1: titik NvSORT konsisten
+    bergeser ke satu arah dibanding pasangan NvDCF-nya pada akurasi yang identik).
+    """
     plot_df = df.dropna(subset=[x_col, y_col, "display_name"])
     if plot_df.empty:
         print(f"[WARN] Tidak ada baris valid untuk plot '{title}', dilewati.")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 6.5))
-    models = sorted(plot_df["model"].unique())
-    for i, model in enumerate(models):
+    rows = []
+    for model in ALL_MODELS_ORDER:
         sub = plot_df[plot_df["model"] == model]
-        ax.scatter(
-            sub[x_col],
-            sub[y_col],
-            color=CATEGORICAL_COLORS[i % len(CATEGORICAL_COLORS)],
-            label=model,
-            s=60,
-            edgecolors="white",
-            linewidths=0.5,
-            zorder=3,
-        )
+        if sub.empty:
+            continue
+        by_tracker = sub.set_index("tracker")
+        acc = sub[y_col].iloc[0]
+        rows.append((model, acc, by_tracker))
+    rows.sort(key=lambda r: r[1])  # akurasi naik -> model akurasi tertinggi di baris paling atas
 
-    x_span = float(plot_df[x_col].max() - plot_df[x_col].min())
-    y_span = float(plot_df[y_col].max() - plot_df[y_col].min())
-    points = [
-        (row[x_col], row[y_col], f"{row['display_name']} ({row['tracker']})")
-        for _, row in plot_df.iterrows()
-    ]
-    y_offsets = _place_labels_without_overlap(points, x_span=x_span, y_span=y_span)
-    for (x, y, text), y_off in zip(points, y_offsets):
-        label_y = y + y_off
-        if abs(y_off) > y_span * 0.01:
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    ytick_labels = []
+    for y, (model, acc, by_tracker) in enumerate(rows):
+        xs = {t: by_tracker.loc[t, x_col] for t in ("nvdcf", "nvsort") if t in by_tracker.index}
+        if len(xs) == 2:
             ax.plot(
-                [x, x],
-                [y, label_y],
-                color="0.6",
-                linewidth=0.6,
+                [xs["nvdcf"], xs["nvsort"]],
+                [y, y],
+                color="0.75",
+                linewidth=2.2,
+                solid_capstyle="round",
+                zorder=1,
+            )
+            delta = xs["nvsort"] - xs["nvdcf"]
+            mid_x = (xs["nvdcf"] + xs["nvsort"]) / 2
+            ax.annotate(
+                delta_fmt.format(delta),
+                (mid_x, y),
+                fontsize=7.5,
+                color="0.35",
+                ha="center",
+                va="bottom",
+                xytext=(0, 6),
+                textcoords="offset points",
                 zorder=2,
             )
-        ax.annotate(
-            text,
-            (x, label_y),
-            fontsize=7,
-            xytext=(6, 0),
-            textcoords="offset points",
-            va="center",
-            zorder=4,
-        )
+        for tracker, x in xs.items():
+            ax.scatter(
+                [x],
+                [y],
+                color=TRACKER_COLORS[tracker],
+                s=85,
+                edgecolors="white",
+                linewidths=0.8,
+                zorder=3,
+                label=tracker,
+            )
+        ytick_labels.append(f"{DISPLAY_NAMES[model]}\nmAP50-95 {acc:.3f}")
+
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels(ytick_labels, fontsize=8.5)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.grid(linestyle=":", alpha=0.4)
-    ax.margins(x=0.18)
+    ax.grid(axis="x", linestyle=":", alpha=0.4)
+    ax.margins(y=0.1, x=0.12)
+
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    order = [t for t in ("nvdcf", "nvsort") if t in by_label]
+    ax.legend(
+        [by_label[t] for t in order],
+        ["NvDCF" if t == "nvdcf" else "NvSORT" for t in order],
+        title="Tracker",
+        loc="best",
+        fontsize=8.5,
+    )
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
@@ -277,28 +254,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"[OK] {len(tradeoff)} baris trade-off ditulis ke {tradeoff_path}")
 
     plots_dir = args.out_dir / "plots"
-    plot_scatter(
+    plot_tradeoff_dumbbell(
         tradeoff,
         x_col="avg_fps",
         y_col="map50_95",
         out_path=plots_dir / "tradeoff_map_vs_fps.png",
         title="Trade-off Akurasi vs. Kecepatan (Jetson Orin Nano)",
         xlabel="Avg FPS",
-        ylabel="mAP50-95 (KITTI val, Tesla T4)",
     )
 
     power_col = args.power_column or _guess_power_column(tradeoff.columns)
     if power_col is None:
         print("[WARN] Tidak ada kolom 'avg_*_mW' di runtime_summary.csv, plot vs power dilewati.")
     else:
-        plot_scatter(
+        plot_tradeoff_dumbbell(
             tradeoff,
             x_col=power_col,
             y_col="map50_95",
             out_path=plots_dir / "tradeoff_map_vs_power.png",
             title="Trade-off Akurasi vs. Daya (Jetson Orin Nano)",
-            xlabel=f"{power_col} (mW)",
-            ylabel="mAP50-95 (KITTI val, Tesla T4)",
+            xlabel=f"Daya sistem total, {power_col.removeprefix('avg_').removesuffix('_mW')} (mW)",
+            delta_fmt="{:+.0f}",
         )
     print(f"[OK] Grafik trade-off ditulis ke {plots_dir}/")
 

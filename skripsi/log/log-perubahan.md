@@ -10,6 +10,208 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-24 14:29 WITA — Penghapusan referensi §-subbab & pengurangan em dash di BAB I-IV dan `generate_docx.py`
+
+- **Permintaan penulis**: hapus total penggunaan rujukan gaya `§3.5.1`/`§3.6.2` di seluruh naskah
+  (bukan diganti jadi "Subbab 3.5.1", tapi dihapus total dan kalimat dirangkai ulang agar tetap
+  nyambung tanpa rujukan angka), serta hilangkan kebiasaan em dash (`—`) yang berlebihan karena
+  terkesan seperti gaya tulisan AI, dan pakai istilah teknis (mis. "galat", "luaran", "rerata")
+  dibanding istilah baku umum di tempat yang wajar.
+- **Cakupan**: `draft/BAB-1-Pendahuluan.md`, `draft/BAB-2-Metode-Penelitian.md`,
+  `draft/BAB-3-Hasil-dan-Pembahasan.md`, `draft/BAB-4-Kesimpulan-dan-Saran.md`, dan
+  `draft/_build/generate_docx.py` (isi `VERIFICATION_NOTES` serta subjudul halaman judul).
+- **Perubahan per berkas**:
+  - BAB I: sudah sesuai standar baru pada pemeriksaan (rujukan §/em dash yang tersisa semuanya
+    ada di dalam blockquote catatan status penulis, bukan di badan naskah).
+  - BAB II: ~76 rujukan §X.Y dihapus dan kalimat dirangkai ulang; seluruh em dash di badan naskah
+    dihapus termasuk pada judul bab; "hasil" diganti "luaran" di ~8 tempat (makna keluaran
+    pipeline, bukan makna temuan/kesimpulan); "rata-rata" diganti "rerata" pada Tabel 2.2.
+  - BAB III: rujukan §X.Y di badan naskah sudah 0; 1 em dash tersisa di sel tabel diganti koma;
+    2 instance "rata-rata" diganti "rerata"; istilah "hasil" pada frasa seperti "hasil pengujian"
+    sengaja TIDAK diganti karena maknanya beda dari "luaran" (temuan/kesimpulan vs. keluaran
+    teknis pipeline).
+  - BAB IV: sudah sesuai standar baru pada pemeriksaan, tidak ada perubahan yang diperlukan pada
+    badan naskah.
+  - `generate_docx.py`: 9 rujukan §X.Y dan 1 em dash pada daftar `VERIFICATION_NOTES` (appendix
+    "CATATAN VERIFIKASI DAN TINDAK LANJUT PENULIS" yang benar-benar muncul di docx akhir) dihapus
+    dan kalimat dirangkai ulang; 1 em dash pada subjudul halaman judul diganti koma. Substansi
+    setiap catatan verifikasi (item yang masih terbuka: konfirmasi pergantian rumusan masalah #3
+    ke pembimbing, verifikasi akurasi as-deployed FP16, identifikasi varian Jetson Orin Nano,
+    versi GStreamer/GLib/CUDA belum tercatat, hyperparameter pelatihan belum didokumentasikan,
+    ambang mAP FP16-vs-FP32 belum dikunci, nama laboratorium belum dikonfirmasi, satu sitasi Wu
+    dkk. 2024 dihapus karena DOI salah, tujuh sitasi Bab I perlu dibaca ulang lebih dalam) tidak
+    diubah, hanya gaya rujukan dan tanda bacanya.
+  - Seluruh blockquote catatan status penulis, blok kode berpagar Mermaid (termasuk sintaks panah
+    `-->`), baris pemisah tabel Markdown (`|---|---|`), rujukan gambar, dan seluruh angka/statistik
+    (FPS, p-value, persentase, dsb.) dipertahankan tidak berubah.
+- **Verifikasi**: `clean_chapter.py` dijalankan ulang untuk keempat bab lalu `generate_docx.py`
+  dijalankan ulang untuk membangun ulang `Skripsi-Gabungan-BAB-I-IV.docx`; hasil dikonversi ke PDF
+  (`soffice --headless --convert-to pdf`) dan diperiksa dengan `pdftotext` + `grep`: jumlah `§`
+  dan `—` pada dokumen akhir turun ke **0** (dari 11 dan 4 sebelumnya, keduanya berasal dari
+  `generate_docx.py`, karena keempat berkas `.clean.md` sumber sudah 0 sejak awal berkat
+  blockquote yang dibuang otomatis oleh `clean_chapter.py`). Rendering gambar/diagram dari
+  perbaikan sebelumnya (entri 11:30 WITA di atas) dikonfirmasi tetap utuh (0 pesan "Gambar tidak
+  ditemukan", 74 halaman).
+
+---
+
+## 2026-08-24 11:30 WITA — Perbaikan `_build/generate_docx.py`: render gambar & diagram Mermaid
+
+- **Masalah**: skrip pembangun `Skripsi-Gabungan-BAB-I-IV.docx` (`draft/_build/generate_docx.py`)
+  tidak punya penanganan untuk blok kode berpagar (```` ``` ````) maupun sintaks gambar Markdown
+  (`![alt](path)`) di `parse_blocks()` — keduanya jatuh ke cabang paragraf umum (`else`), sehingga
+  ketujuh figur eksperimen nyata di BAB III (`../eksperimen/plots/*.png`) dan keempat diagram
+  Mermaid (BAB II §2.5.3, §2.5.4 ×2; BAB III §3.1) muncul sebagai teks Markdown/sintaks Mermaid
+  mentah yang berantakan di dokumen gabungan, bukan sebagai gambar/diagram yang benar-benar
+  ter-*render*. Bug ditemukan lewat pembacaan kode langsung sebelum sempat membuka docx yang
+  sudah ada (bug belum pernah dikonfirmasi lewat rendering — murni dari analisis kode).
+- **Batasan lingkungan**: sandbox eksekusi tidak memiliki akses jaringan keluar (dicoba ke
+  `registry.npmjs.org` dan `kroki.io`, keduanya gagal koneksi) sehingga `@mermaid-js/mermaid-cli`
+  (`mmdc`, butuh Puppeteer/Chromium) maupun layanan render Mermaid daring tidak bisa dipakai.
+  Sebagai gantinya, `graphviz`/`dot` (CLI + binding Python) sudah tersedia secara lokal di
+  sandbox tanpa perlu instalasi jaringan.
+- **Perbaikan yang dilakukan**:
+  - Keempat diagram Mermaid diterjemahkan manual menjadi berkas Graphviz DOT dan di-*render*
+    menjadi PNG lokal (150 dpi) di `draft/_build/diagrams/`: `pipeline_deepstream.{dot,png}`,
+    `nms_position.{dot,png}`, `nms_buildtime_runtime.{dot,png}`, `measurement_structure.{dot,png}`.
+    Isi/struktur node dan label diagram dipertahankan identik dengan sumber Mermaid di berkas
+    `.md` (tidak ada informasi baru yang ditambahkan/dihilangkan), hanya representasi visualnya
+    yang berpindah dari sintaks Mermaid ke tata letak Graphviz.
+  - `generate_docx.py`: `parse_blocks()` ditambah penanganan status "di dalam pagar kode" (blok
+    ```` ``` ```` / ```` ```mermaid ````) menghasilkan blok baru berjenis `"code"` (blok kode
+    polos, dipakai untuk formula IoU §1.2.5 dan FPS §1.2.9 di BAB I) atau `"mermaid"` (fenced
+    dengan tag bahasa `mermaid`), serta penanganan baris `![alt](path)` menjadi blok baru
+    berjenis `"image"`.
+  - Fungsi baru: `add_code_block()` (render sebagai paragraf monospace/Consolas rata tengah),
+    `add_image_block()` (menyisipkan gambar lewat `doc.add_picture()` lebar 14 cm + keterangan
+    italic di bawahnya, dengan penanganan jika berkas gambar tidak ditemukan agar tidak gagal
+    diam-diam), `add_mermaid_block()` + `_resolve_mermaid_image()` (mencocokkan sumber Mermaid ke
+    PNG yang sudah di-*render* lewat potongan teks unik di `MERMAID_IMAGE_MAP`, dengan fallback
+    menampilkan sumber Mermaid mentah + catatan peringatan bila suatu saat ada diagram baru yang
+    belum punya pemetaan — supaya kegagalan pemetaan tetap terlihat, bukan hilang tanpa jejak).
+  - Path gambar Markdown (`../eksperimen/plots/*.png`, ditulis relatif terhadap `draft/`)
+    diselesaikan relatif terhadap `DRAFT_DIR` (`os.path.dirname(BUILD_DIR)`), bukan relatif
+    terhadap `_build/`, supaya konsisten dengan lokasi berkas `.md` sumber aslinya meski file
+    `.clean.md` yang dibaca `generate_docx.py` berada satu level lebih dalam.
+- **Verifikasi**: `clean_chapter.py` dijalankan ulang untuk keempat bab (memperbarui
+  `.clean.md` agar mengikuti rename §2.7 dari entri log sebelumnya), lalu `generate_docx.py`
+  dijalankan ulang menghasilkan `Skripsi-Gabungan-BAB-I-IV.docx` baru. Dikonversi ke PDF via
+  `soffice --headless --convert-to pdf` lalu dirasterisasi per halaman (`pdftoppm`) dan diperiksa
+  visual: keempat diagram Mermaid tampil sebagai diagram Graphviz yang rapi dengan keterangan di
+  bawahnya (bukan lagi teks mentah), formula IoU/FPS tampil sebagai baris monospace rata tengah,
+  dan figur `Distribusi FPS per Model` (serta path resolusi yang sama berlaku untuk 6 figur
+  lainnya) tampil sebagai gambar boxplot asli dari `eksperimen/plots/`. Pencarian teks di PDF
+  hasil (`pdftotext`) mengonfirmasi nol kemunculan pesan fallback `"Gambar tidak ditemukan"` atau
+  `"tanpa render gambar yang cocok"` — seluruh 7 gambar dan 4 diagram berhasil ter-resolusi.
+- **Berkas baru**: `draft/_build/diagrams/*.dot` (4), `draft/_build/diagrams/*.png` (4, hasil
+  render lokal, bukan aset final tesis — murni pendukung *build* docx).
+- **Berkas diubah**: `draft/_build/generate_docx.py` (lihat detail di atas);
+  `draft/_build/BAB-{1,2,3,4}.clean.md` (regenerasi otomatis dari `clean_chapter.py`, mengikuti
+  rename §2.7 dari entri sebelumnya — bukan perubahan manual); `draft/Skripsi-Gabungan-BAB-I-IV.docx`
+  (regenerasi, sekarang berisi gambar/diagram yang benar).
+
+## 2026-08-24 11:17 WITA — BAB II §2.7: ganti nama "Metrik Evaluasi" → "Kriteria Evaluasi"
+
+- Diskusi dengan user: nama subbab §2.7 lama ("Metrik Evaluasi") bertabrakan dengan judul
+  Bab I §1.2.9 "Metrik Evaluasi Kinerja Real-Time Pipeline", yang sudah mendefinisikan
+  metrik (FPS, latensi/P95, *precision*/*recall*/mAP) secara konseptual — berisiko dibaca
+  penguji sebagai pengulangan BAB I, padahal isi §2.7 sebenarnya berbeda (prosedur
+  penerapan metrik di Jetson Orin Nano, ambang kelulusan per rumusan masalah, Tabel 2.2).
+- Dicek dua acuan struktur: naskah PDF menuju semhas tidak punya subbab terpisah ini sama
+  sekali (metrik hanya teks *run-in* di §2.6), dan referensi struktur
+  (`referensi-skripsi/revisi AUDY FEBRYANTI...pdf`) menaruh "Metrik Evaluasi" hanya di BAB
+  I §1.2.10 (akhir Landasan Teori), bukan di BAB II — keduanya konsisten menaruh definisi
+  metrik hanya di BAB I.
+- **Keputusan**: konten §2.7 dipertahankan (tidak dihapus/dipindah — isinya metodologis
+  dan sah ada di BAB II), tapi judul diganti jadi **"Kriteria Evaluasi"** agar
+  mencerminkan isi sebenarnya, dan kalimat pembuka subbab ditambah penunjuk eksplisit ke
+  Bab I §1.2.9 ("definisi konseptual metrik telah dibahas di sana, subbab ini merumuskan
+  penerapannya") agar tidak dibaca sebagai definisi ulang.
+- **Berkas**: `draft/BAB-2-Metode-Penelitian.md` — judul `## 2.7 Metrik Evaluasi` →
+  `## 2.7 Kriteria Evaluasi`; kalimat pembuka paragraf pertama §2.7 ditambah; catatan
+  status di bagian pembuka BAB II (blockquote) ditambah entri baru menjelaskan perubahan
+  nama ini, dan referensi "§2.7 Metrik Evaluasi" pada catatan pemecahan §2.6→§2.6+§2.7
+  yang lama disesuaikan (dihapus nama subbab spesifik dari catatan itu supaya tidak perlu
+  diubah lagi kalau nama berubah lagi ke depannya).
+- Dicek: tidak ada rujukan silang ke "§2.7"/"Metrik Evaluasi" (versi BAB II) di
+  `BAB-3-Hasil-dan-Pembahasan.md` atau `BAB-4-Kesimpulan-dan-Saran.md`, jadi tidak ada
+  berkas lain yang perlu disesuaikan. `BAB-1-Pendahuluan.md` §1.2.9 tidak diubah (judulnya
+  memang dimaksud sebagai "Metrik Evaluasi" versi konseptual, sumber acuan §2.7).
+
+## 2026-08-23 23:32 WITA — BAB III Gambar 3.6/3.7: ganti grafik trade-off dari scatter 12-titik jadi diagram pasangan (dumbbell) per model
+
+- Klarifikasi user setelah entri sebelumnya (yang salah sasaran — mengganti diagram mermaid
+  §3.1): yang dimaksud "diagram kurang berguna, menggabungkan semuanya" adalah **grafik**
+  (`Gambar 3.6`/`Gambar 3.7`, `tradeoff_map_vs_fps.png`/`tradeoff_map_vs_power.png`), bukan
+  flowchart mermaid. Instruksi sama: pahami struktur data dulu, baru rancang bentuk grafik —
+  bukan data mentah → grafik generik langsung.
+- Diagnosis akar masalah (baca `utils/benchmark_analysis/tradeoff_analysis.py` fungsi lama
+  `plot_scatter` + `_place_labels_without_overlap`): scatter menaruh ke-12 kombinasi
+  model×tracker pada satu sumbu-y kontinu (mAP50-95) memakai 6 warna kategorikal per model,
+  lalu membedakan tracker **hanya lewat teks label kecil** (7pt) dengan garis pemandu —
+  akurasi tidak berubah antar-tracker untuk model yang sama (bobot deteksi identik, dicek di
+  `tradeoff_summary.csv`), sehingga tiap pasangan NvDCF/NvSORT menumpuk nyaris tepat di titik
+  y yang sama dan algoritma anti-tumpang-tindih labelnya jadi kerja keras untuk masalah yang
+  sebenarnya bisa dihindari dengan bentuk grafik yang lebih sesuai struktur datanya.
+- Dipanggil skill `dataviz` untuk prinsip pemilihan bentuk grafik & encoding warna sebelum
+  redesain (form-first, color-last; identitas kategori tidak boleh cuma lewat teks/warna
+  tunggal tanpa bantuan encoding lain).
+- **Bentuk baru**: diagram pasangan (*dumbbell*) — satu baris kategorikal per model (bukan
+  scatter kontinu), diurutkan naik menurut mAP50-95; titik NvDCF/NvSORT per baris dihubungkan
+  garis abu-abu yang panjangnya *langsung* menunjukkan selisih FPS/daya akibat pergantian
+  tracker, dengan nilai selisih dicetak di atas garis (`+15.6`, dst.) — pola "titik NvSORT
+  konsisten bergeser satu arah dibanding pasangan NvDCF-nya" yang sebelumnya cuma disebut di
+  prosa (§3.6.1) sekarang langsung terbaca dari panjang+arah garis, tanpa perlu menghitung
+  sendiri dari tabel.
+- **Encoding warna**: tracker (bukan model) yang diberi warna — biru NvDCF / merah NvSORT,
+  diimpor dari `TRACKER_COLORS` di `extra_plots.py` (bukan didefinisikan ulang) supaya
+  konsisten dengan `tracker_latency_comparison.png` dan `energy_per_frame.png` yang sudah
+  memakai skema warna sama. Identitas model dipindah ke label baris (y-tick 2 baris: nama
+  model + nilai mAP50-95), bukan warna — karena hanya ada 2 nilai tracker (butuh 2 warna),
+  sedangkan 6 model via warna kategorikal-lah yang tadinya bikin legenda ramai.
+- **Kode**: `utils/benchmark_analysis/tradeoff_analysis.py` — fungsi `plot_scatter` +
+  `_place_labels_without_overlap` (union-find anti-tumpang-tindih label) dihapus, diganti
+  `plot_tradeoff_dumbbell`; import `ALL_MODELS_ORDER`/`DISPLAY_NAMES`/`TRACKER_COLORS` dari
+  `extra_plots.py` (sudah jadi *single source of truth* nama/warna model-tracker di modul
+  ini, sebelumnya `tradeoff_analysis.py` punya `CATEGORICAL_COLORS` sendiri yang tidak
+  konsisten dengan `extra_plots.py`); label sumbu-x grafik daya dirapikan (`avg_VDD_IN_mW
+  (mW)` yang redundan → `Daya sistem total, VDD_IN (mW)`). Dijalankan ulang lewat
+  `.venv-thesis-plots` (`python utils/benchmark_analysis/tradeoff_analysis.py`) — 12 baris
+  `tradeoff_summary.csv` dan kedua PNG diregenerasi dari data yang sama, tidak ada angka baru
+  yang dikarang.
+- **Draft**: `draft/BAB-3-Hasil-dan-Pembahasan.md` §3.6.1 — teks pengantar, caption Gambar
+  3.6/3.7, dan alt-text disesuaikan dari "diagram sebar"/"grafik Pareto" jadi "diagram
+  pasangan (dumbbell)"; paragraf pembahasan pola ditambah kuantifikasi eksplisit yang kini
+  langsung terbaca dari grafik (FPS: seluruh 6 model naik +0,1 s.d. +16,7 pada NvSORT; daya:
+  turun pada 4 dari 6 model, TAPI naik pada YOLOv9t/YOLOv9t+EfficientNMS +332/+553 mW meski
+  FPS-nya naik paling besar — nuansa "atau" pada klaim lama sekarang eksplisit dengan angka,
+  bukan cuma disebut sebagai kemungkinan). Tidak ada perubahan pada lima poin rekomendasi
+  §3.6.1 (angka-angkanya sudah konsisten dengan tabel §3.4, dicek ulang).
+
+## 2026-08-23 23:24 WITA — BAB III §3.1: ganti diagram mermaid dari alur ETL menjadi peta struktur pengukuran → RM
+
+- Keluhan user: diagram mermaid `flowchart LR` lama di §3.1 (data mentah 60 *run* → ringkasan →
+  tabel/grafik → gabung akurasi → trade-off) dinilai kurang berguna — cuma menggambar ulang
+  kalimat prosa persis di atasnya (alur agregasi/ETL data), tanpa memikirkan cara terbaik
+  memanfaatkan data yang sudah tersedia. Instruksi eksplisit: proses/pahami data dulu baru
+  rancang diagram, bukan sebaliknya (data → flowchart langsung tanpa olahan).
+- Sebelum mengganti, dicek struktur data aktual: kolom `eksperimen/runtime_summary.csv` dan
+  `eksperimen/tradeoff_summary.csv` (12 skenario = 6 konfigurasi model × 2 *tracker*,
+  dikonfirmasi lewat `cut`/`sort -u` pada kolom model×tracker), serta isi §3.2–§3.4 yang sudah
+  ditulis untuk memastikan pemetaan metrik→RM akurat (FPS & latensi dipakai di §3.2/§3.3/§3.4;
+  utilisasi sumber daya/daya baru dipakai eksplisit di §3.4.3 dan §3.6; akurasi KITTI independen
+  dari 60 *run runtime*, baru digabung di §3.6).
+- Diagram baru (`flowchart TB`) memetakan: desain eksperimen (60 *run*) → tiga kelompok metrik
+  *runtime* (FPS, latensi+dekomposisi, utilisasi sumber daya/daya) + evaluasi akurasi KITTI
+  (independen) → rumusan masalah/subbab mana yang dijawab tiap kelompok metrik (§3.2 RM1, §3.3
+  RM2, §3.4 RM3, §3.6 trade-off/Pareto). Ini jadi peta navigasi bab berbasis struktur pengukuran,
+  bukan alur transformasi data mekanis.
+- Ditambah 1 kalimat transisi pengantar diagram + 1 paragraf penutup penegas (akurasi KITTI
+  bukan berasal dari 60 *run runtime*, dua sumber data independen) agar diagram tidak berdiri
+  sendiri tanpa konteks.
+- File: `draft/BAB-3-Hasil-dan-Pembahasan.md` §3.1 (baris ~59–83). Tidak ada perubahan pada data
+  eksperimen atau angka — murni representasi/diagram.
+
 ## 2026-08-23 22:55 WITA — Standardisasi "kotak" → *bounding box* di prosa BAB I–IV, berdasar riset referensi
 
 - Permintaan user: cari referensi apakah skripsi/paper Indonesia menerjemahkan istilah
