@@ -629,13 +629,29 @@ ambang kelulusan tetap dan bukan variabel yang dibandingkan antar konfigurasi.
 Rasionalisasi lengkap dapat dilihat pada pembahasan pemilihan *tracker* sebelumnya
 dan batasan penelitian pada Bab I.
 
+**Metrik *speedup*.** Selain selisih (Δ) FPS/latensi, kedua perbandingan
+komponen-ke-komponen pada RM2 dan RM3 (EfficientNMS vs. NMS standar; NvSORT vs.
+NvDCF) turut dilaporkan sebagai rasio *speedup* S = T_sebelum / T_sesudah, mengikuti
+notasi baku yang lazim dipakai pada evaluasi optimasi komputasi paralel di
+literatur *edge computing* (mis. Suder dkk., 2023). Rasio ini dihitung langsung dari
+rerata FPS/latensi yang sama dengan yang dipakai pada uji signifikansi Welch's
+*t*-test, tanpa pengujian tambahan; nilai S > 1 menandakan percepatan, S < 1
+menandakan perlambatan (berlaku juga untuk kasus RM2 pada YOLOv9t, yang secara
+empiris menunjukkan perlambatan, dibahas pada Bab III). Metrik *parallel
+efficiency* (E = S/N, N = jumlah unit pemrosesan paralel) **sengaja tidak
+dipakai** pada penelitian ini karena pengujian dilakukan pada satu aliran video
+tunggal (*single-stream*), sehingga tidak ada nilai N (jumlah *stream*/unit
+paralel) yang bermakna untuk dihitung; metrik ini baru relevan pada skenario
+*deployment* multi-kamera/multi-*stream*, yang secara eksplisit ditempatkan
+sebagai arah penelitian lanjutan (lihat Bab IV, subbab Saran).
+
 **Tabel 2.2** Kriteria evaluasi per rumusan masalah
 
 | Sumbu | Metrik | Kriteria |
 |---|---|---|
 | RM1 (*baseline*) | *Throughput* keseluruhan | *Real-time* didefinisikan sebagai **throughput ≥ 30 FPS** (mengikuti konfigurasi *default* kamera ZED dan standar ADAS *safety-critical perception layer*, Costa dkk., 2025) |
 | RM1 (*baseline*) | Latensi *end-to-end* | Dilaporkan sebagai rerata dan persentil **P95**, bukan hanya rerata sendirian, supaya *outlier*/*jitter* (relevan untuk *safety-critical*, sebagaimana dibahas pada Bab I) tidak tersembunyi |
-| RM2 (NMS) | *Throughput* & latensi tahap inferensi | Selisih (Δ) *baseline* vs. EfficientNMS pada pasangan model yang sama; peningkatan dianggap bermakna jika Δ konsisten di seluruh repetisi (bukan kebetulan *noise* satu percobaan) |
-| RM3 (*tracker*) | *Throughput* keseluruhan, latensi tahap *tracking*, utilisasi GPU/CPU/RAM/daya | **Murni efisiensi komputasi**, sesuai batasan penelitian pada Bab I. **Tidak** ada ambang akurasi *tracking* (*ID switch*, MOTA/IDF1) yang perlu dipenuhi; konsisten dengan pendekatan MLPerf Mobile Inference Benchmark (Janapa Reddi dkk., 2022) yang menjadikan akurasi ambang kelulusan tetap (bukan variabel dibandingkan), sebagaimana dibahas pada pembahasan pemilihan *tracker* |
+| RM2 (NMS) | *Throughput* & latensi tahap inferensi, *speedup* (S) | Selisih (Δ) *baseline* vs. EfficientNMS pada pasangan model yang sama, dilaporkan juga sebagai rasio *speedup*; peningkatan dianggap bermakna jika Δ konsisten di seluruh repetisi (bukan kebetulan *noise* satu percobaan) |
+| RM3 (*tracker*) | *Throughput* keseluruhan, latensi tahap *tracking*, utilisasi GPU/CPU/RAM/daya, *speedup* (S) | **Murni efisiensi komputasi**, sesuai batasan penelitian pada Bab I. **Tidak** ada ambang akurasi *tracking* (*ID switch*, MOTA/IDF1) yang perlu dipenuhi; konsisten dengan pendekatan MLPerf Mobile Inference Benchmark (Janapa Reddi dkk., 2022) yang menjadikan akurasi ambang kelulusan tetap (bukan variabel dibandingkan), sebagaimana dibahas pada pembahasan pemilihan *tracker* |
 | Akurasi (pendukung, skenario 4) | mAP50, mAP50-95 (*as-deployed* FP16 vs. *proxy* FP32) | Bukan variabel dibandingkan antar model, melainkan **kriteria *sanity-check* pass/fail**: selisih diharapkan kecil (ambang pasti, mis. <1–2 poin, ditentukan penulis berdasarkan referensi literatur umum FP16-vs-FP32 setelah data aktual tersedia) |
 

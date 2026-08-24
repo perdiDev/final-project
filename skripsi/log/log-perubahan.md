@@ -10,6 +10,44 @@ kenapa (kalau relevan).
 
 ---
 
+## 2026-08-24 15:05 WITA — Penambahan metrik *speedup* formal ke Kriteria Evaluasi (BAB II & III)
+
+- **Konteks**: penulis membandingkan struktur Kriteria Evaluasi dengan tabel eksternal berisi
+  taksonomi jenis studi riset edge/GPU (Profiling & Bottleneck Analysis, Scalability Study) dan
+  bertanya apakah metrik seperti Nsight Systems, *Speedup*, dan *Parallel Efficiency* perlu
+  ditambahkan agar penelitian lebih terasa "edge device" dibanding sekadar implementasi AI, sampai
+  sempat mengusulkan mengganti total subbab Kriteria Evaluasi.
+- **Keputusan**: subbab Kriteria Evaluasi (§2.7) **tidak** diganti/dihapus total karena strukturnya
+  (per rumusan masalah RM1-RM3 + akurasi) sudah solid dan mudah diikuti; sebagai gantinya metrik
+  *speedup* (S) ditambahkan sebagai pelengkap formal ke metrik yang sudah ada di RM2 dan RM3, karena
+  bisa dihitung langsung dari data FPS yang sudah dikumpulkan (tanpa eksperimen baru).
+  *Parallel efficiency* (E = S/N) **sengaja tidak dipakai** karena penelitian ini *single-stream*
+  sehingga tidak ada nilai N (jumlah unit paralel) yang bermakna untuk dihitung; metrik ini
+  didokumentasikan sebagai baru relevan untuk skenario multi-*stream*, yang sudah tepat ditempatkan
+  sebagai saran penelitian lanjutan di Bab IV (§4.2 poin 7), bukan ditambahkan paksa ke scope
+  sekarang.
+- **Perubahan pada `draft/BAB-2-Metode-Penelitian.md`**: paragraf baru "Metrik *speedup*" ditambah
+  sebelum Tabel 2.2, mendefinisikan S = T_sebelum/T_sesudah dan menjelaskan kenapa *parallel
+  efficiency* tidak dipakai; kolom "Kriteria" pada baris RM2 dan RM3 Tabel 2.2 diperbarui
+  menyebutkan *speedup* sebagai bagian metrik yang dilaporkan.
+- **Perubahan pada `draft/BAB-3-Hasil-dan-Pembahasan.md`**: kolom *Speedup* (S) ditambahkan ke
+  Tabel 3.3.2 (RM2, EfficientNMS vs. *baseline*) dan Tabel 3.4.2 (RM3, NvSORT vs. NvDCF), dihitung
+  murni dari rasio FPS yang sudah dipublikasikan di tabel yang sama (0,998× dan 0,979× untuk RM2;
+  1,001×-1,332× untuk RM3), termasuk kasus perlambatan RM2 pada YOLOv9t (S = 0,979×, temuan negatif
+  yang sudah dibahas jujur sebelumnya) sehingga tidak ada distorsi narasi. Kalimat pembahasan pada
+  §3.3.2 dan §3.4.2 juga disisipi rujukan angka *speedup* yang sama secara natural.
+- **Nsight Systems**: **belum** ditambahkan ke naskah karena datanya belum ada (perangkat Jetson
+  perlu dijalankan ulang oleh penulis dengan `nsys profile`, AI tidak punya akses jaringan/SSH ke
+  perangkat). Perintah `nsys profile`/`nsys stats` dan alur pengumpulan data sudah diberikan ke
+  penulis di percakapan, subbab profiling Nsight akan ditulis setelah penulis mengirim hasil CSV/
+  trace yang sebenarnya, bukan sebelumnya (menghindari fabrikasi data).
+- **Verifikasi**: `clean_chapter.py` × 4 dan `generate_docx.py` dijalankan ulang; hasil dikonversi
+  ke PDF dan diperiksa dengan `pdftotext`: `§`/`—` tetap 0, 0 pesan "Gambar tidak ditemukan", istilah
+  "speedup" muncul 10 kali (case-insensitive) di lokasi yang diharapkan (§2.7, Tabel 2.2, Tabel
+  3.3.2, Tabel 3.4.2, dan kalimat pembahasan terkait), 75 halaman.
+
+---
+
 ## 2026-08-24 14:29 WITA — Penghapusan referensi §-subbab & pengurangan em dash di BAB I-IV dan `generate_docx.py`
 
 - **Permintaan penulis**: hapus total penggunaan rujukan gaya `§3.5.1`/`§3.6.2` di seluruh naskah

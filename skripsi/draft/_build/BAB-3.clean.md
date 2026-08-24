@@ -219,17 +219,17 @@ ada sedikit "ruang" yang bisa dioptimasi pada tahap inferensi itu sendiri.
 
 ### 3.3.2 Dampak EfficientNMS terhadap Throughput Keseluruhan
 
-| Pasangan | FPS *baseline* | FPS EfficientNMS | Δ FPS | *p*-value | Kesimpulan |
-|---|---|---|---|---|---|
-| YOLOv8n vs. +EfficientNMS | 66,77 | 66,63 | −0,14 (−0,2%) | 0,592 | Tidak signifikan |
-| YOLOv9t vs. +EfficientNMS | 51,52 | 50,44 | **−1,08 (−2,1%)** | **0,023** | **Signifikan, EfficientNMS lebih lambat** |
+| Pasangan | FPS *baseline* | FPS EfficientNMS | Δ FPS | *Speedup* (S) | *p*-value | Kesimpulan |
+|---|---|---|---|---|---|---|
+| YOLOv8n vs. +EfficientNMS | 66,77 | 66,63 | −0,14 (−0,2%) | 0,998× | 0,592 | Tidak signifikan |
+| YOLOv9t vs. +EfficientNMS | 51,52 | 50,44 | **−1,08 (−2,1%)** | **0,979×** | **0,023** | **Signifikan, EfficientNMS lebih lambat** |
 
 Latensi total rerata (ms): YOLOv8n 273,35 ms (*baseline*) vs. 262,34 ms (EfficientNMS);
 YOLOv9t 457,67 ms (*baseline*) vs. 468,26 ms (EfficientNMS).
 
-Pada YOLOv8n, tidak ada selisih FPS yang signifikan secara statistik. Pada YOLOv9t, sebaliknya,
-selisih FPS justru **signifikan namun berlawanan arah dari yang diharapkan**: EfficientNMS lebih
-lambat, bukan lebih cepat. Karena latensi tahap inferensi itu sendiri hampir tidak berubah,
+Pada YOLOv8n, tidak ada selisih FPS yang signifikan secara statistik (*speedup* S = 0,998×,
+praktis setara). Pada YOLOv9t, sebaliknya, selisih FPS justru **signifikan namun berlawanan arah
+dari yang diharapkan**: *speedup* S = 0,979× berarti EfficientNMS lebih lambat, bukan lebih cepat. Karena latensi tahap inferensi itu sendiri hampir tidak berubah,
 penurunan FPS pada YOLOv9t bukan berasal dari biaya operasi NMS paralel itu sendiri, melainkan
 dari interaksi dengan tahap lain. Hasil ini adalah **temuan negatif yang sah secara ilmiah**,
 bukan kegagalan implementasi, dan dapat dijelaskan oleh tiga faktor:
@@ -316,14 +316,14 @@ rendah (3,530 ms) di antara keenam model.
 
 **Tabel 3.4.2** FPS dan signifikansi statistik (Welch's *t*-test, NvDCF vs. NvSORT per model)
 
-| Model | FPS NvDCF | FPS NvSORT | Δ FPS | *p*-value | Signifikan? |
-|---|---|---|---|---|---|
-| YOLOv8n | 66,77 | 66,86 | +0,09 | 0,753 | Tidak |
-| YOLOv9t | **51,52** | **67,08** | **+15,56 (+30%)** | **<0,0001** | **Ya (sangat kuat)** |
-| YOLOv10n | 67,02 | 67,34 | +0,32 | 0,146 | Tidak |
-| YOLO26n | 65,66 | 67,29 | +1,63 | 0,023 | Ya |
-| YOLOv8n+EfficientNMS | 66,63 | 67,23 | +0,60 | 0,003 | Ya |
-| YOLOv9t+EfficientNMS | **50,44** | **67,19** | **+16,75 (+33%)** | **<0,0001** | **Ya (sangat kuat)** |
+| Model | FPS NvDCF | FPS NvSORT | Δ FPS | *Speedup* (S) | *p*-value | Signifikan? |
+|---|---|---|---|---|---|---|
+| YOLOv8n | 66,77 | 66,86 | +0,09 | 1,001× | 0,753 | Tidak |
+| YOLOv9t | **51,52** | **67,08** | **+15,56 (+30%)** | **1,302×** | **<0,0001** | **Ya (sangat kuat)** |
+| YOLOv10n | 67,02 | 67,34 | +0,32 | 1,005× | 0,146 | Tidak |
+| YOLO26n | 65,66 | 67,29 | +1,63 | 1,025× | 0,023 | Ya |
+| YOLOv8n+EfficientNMS | 66,63 | 67,23 | +0,60 | 1,009× | 0,003 | Ya |
+| YOLOv9t+EfficientNMS | **50,44** | **67,19** | **+16,75 (+33%)** | **1,332×** | **<0,0001** | **Ya (sangat kuat)** |
 
 Pola ini juga tergambar pada distribusi FPS per *tracker* di seluruh skenario.
 
@@ -340,8 +340,8 @@ RM3. Untuk YOLOv8n, YOLOv10n, dan (secara praktis) YOLO26n/YOLOv8n+EfficientNMS,
 akibat pergantian *tracker* kecil (0,09–1,63 FPS) meski sebagian secara statistik signifikan
 (karena variansi antar-*run* yang sangat kecil, bukan karena selisihnya besar secara praktis).
 Sebaliknya, untuk **YOLOv9t (baik varian *baseline* maupun EfficientNMS)**, penggantian
-NvDCF→NvSORT meningkatkan FPS **+30% dan +33%**, selisih yang sangat besar dan sangat signifikan
-(*p* < 0,0001).
+NvDCF→NvSORT meningkatkan FPS **+30% dan +33%** (*speedup* S = 1,302× dan 1,332×), selisih yang
+sangat besar dan sangat signifikan (*p* < 0,0001).
 
 Temuan inti RM3 dapat diringkas sebagai **"penghematan komputasi NvSORT bersifat universal pada
 level komponen, tetapi manfaatnya pada *throughput* akhir bersifat kondisional pada model."**
