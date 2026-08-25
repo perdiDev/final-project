@@ -48,6 +48,7 @@ CAMERA_FPS="30"
 OUTPUT_MODE="file"
 DURATION=""
 LIST_ONLY=0
+TESTING_MODE=0
 
 # ==============================================================================
 # HELPER
@@ -139,6 +140,7 @@ while [ $# -gt 0 ]; do
         --camera-fps) CAMERA_FPS="${2:-}"; shift 2 ;;
         --output) OUTPUT_MODE="${2:-}"; shift 2 ;;
         --duration) DURATION="${2:-}"; shift 2 ;;
+        --testing) TESTING_MODE=1; shift ;;
         --list) LIST_ONLY=1; shift ;;
         -h|--help) print_usage; exit 0 ;;
         *) echo "[ERROR] Opsi tidak dikenal: $1"; print_usage; exit 1 ;;
@@ -294,6 +296,10 @@ if [ "$OUTPUT_MODE" == "file" ]; then
     APP_ARGS+=(--output-file "$OUTPUT_VIDEO_FILE")
 fi
 
+if [ "${TESTING_MODE:-0}" -eq 1 ]; then
+    APP_ARGS+=(--quiet)
+fi
+
 # ==============================================================================
 # METADATA RUN (penting untuk reproducibility di skripsi - lihat docs/04)
 # ==============================================================================
@@ -327,7 +333,10 @@ cleanup() {
     fi
     CLEANED_UP=1
 
-    echo -e "\n[INFO] Menghentikan perekam hardware..."
+	if [ "${TESTING_MODE:-0}" -eq 0 ]; then
+    	echo -e "\n[INFO] Menghentikan perekam hardware..."
+	fi
+
     if [ -n "${TEGRA_PID:-}" ]; then
         kill "$TEGRA_PID" 2>/dev/null
         wait "$TEGRA_PID" 2>/dev/null
@@ -345,16 +354,20 @@ cleanup() {
 
     echo "finished_at            : $(date '+%Y-%m-%d %H:%M:%S')" >> "$RUN_INFO"
 
-    echo ""
-    echo "=== BENCHMARK SELESAI: $MODEL_NAME ($RUN_ID) ==="
-    echo "- Folder hasil     : $RUN_DIR"
-    echo "- Log FPS+Latency  : $FPS_CSV"
-    if [ -s "$HW_CSV" ]; then
-        echo "- Log Hardware     : $HW_CSV"
+	if [ "${TESTING_MODE:-0}" -eq 1 ]; then
+        echo "[OK] Run Selesai. Hasil tersimpan di: $RUN_DIR"
     else
-        echo "- Log Hardware     : TIDAK TERSEDIA (lihat $RUN_INFO)"
-    fi
-    echo "- Info run         : $RUN_INFO"
+	    echo ""
+	    echo "=== BENCHMARK SELESAI: $MODEL_NAME ($RUN_ID) ==="
+	    echo "- Folder hasil     : $RUN_DIR"
+	    echo "- Log FPS+Latency  : $FPS_CSV"
+	    if [ -s "$HW_CSV" ]; then
+		echo "- Log Hardware     : $HW_CSV"
+	    else
+		echo "- Log Hardware     : TIDAK TERSEDIA (lihat $RUN_INFO)"
+	    fi
+	    echo "- Info run         : $RUN_INFO"
+	fi
 }
 trap cleanup SIGINT SIGTERM EXIT
 
@@ -378,7 +391,10 @@ parse_hardware_data() {
         return 1
     fi
 
-    echo "[INFO] Memproses data hardware mentah menjadi CSV..."
+	if [ "${TESTING_MODE:-0}" -eq 0 ]; then
+    	echo "[INFO] Memproses data hardware mentah menjadi CSV..."
+	fi
+
     if "$PARSER_EXEC" "$RAW_LOG" "$HW_CSV" && [ -s "$HW_CSV" ]; then
         rm -f "$RAW_LOG"
         if [ ! -s "$HW_ERROR_LOG" ]; then
@@ -394,11 +410,10 @@ parse_hardware_data() {
 # ==============================================================================
 # EKSEKUSI UTAMA
 # ==============================================================================
-echo "=== MEMULAI BENCHMARK: $MODEL_NAME ==="
-echo "[INFO] Config  : $CONFIG_FILE"
-echo "[INFO] Input   : $INPUT_MODE ${INPUT_FILE:+($INPUT_FILE)}"
-echo "[INFO] Output  : $OUTPUT_MODE"
-echo "[INFO] Hasil   : $RUN_DIR"
+if [ "${TESTING_MODE:-0}" -eq 0 ]; then
+    echo "=== MEMULAI BENCHMARK: $MODEL_NAME ==="
+    echo "[INFO] Hasil akan disimpan di folder: $RUN_DIR"
+fi
 
 TEGRA_PID=""
 HW_FORMATTER_PID=""
@@ -423,7 +438,9 @@ if [ -n "$TEGRASTATS_EXEC" ]; then
         "$TEGRASTATS_EXEC" --interval "$TEGRA_INTERVAL_MS" \
             > "$HW_FIFO" 2> "$HW_ERROR_LOG" &
         TEGRA_PID=$!
-        echo "[INFO] tegrastats berjalan di background (PID: $TEGRA_PID)"
+		if [ "${TESTING_MODE:-0}" -eq 0 ]; then
+        	echo "[INFO] tegrastats berjalan di background (PID: $TEGRA_PID)"
+		fi
     else
         echo "[ERROR] Gagal membuat FIFO untuk perekam hardware: $HW_FIFO"
     fi
@@ -433,11 +450,27 @@ fi
 
 export NVDS_ENABLE_LATENCY_MEASUREMENT=1
 
-echo "[INFO] Menjalankan: $EXEC_PATH ${APP_ARGS[*]}"
-if [ -n "$DURATION" ]; then
-    echo "[INFO] Durasi dibatasi otomatis: ${DURATION}s (SIGINT dikirim ke aplikasi agar shutdown mulus)"
-    timeout -s SIGINT "$DURATION" "$EXEC_PATH" "${APP_ARGS[@]}"
+if [ "${TESTING_MODE:-0}" -eq 1 ]; then
+    # --- MODE TESTING (HENING & BERSIH) ---
+    export GST_DEBUG=1
+    export NVDSINFER_LOG_LEVEL=1
+    APP_STDOUT="$RUN_DIR/app_stdout.log"
+
+    if [ -n "$DURATION" ]; then
+        timeout -s SIGINT "$DURATION" "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDOUT"
+    else
+        "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDOUT"
+    fi
 else
-    echo "[INFO] Tekan Ctrl+C satu kali untuk menghentikan..."
-    "$EXEC_PATH" "${APP_ARGS[@]}"
+    # --- MODE DEBUG (DEFAULT, MUNCULKAN SEMUA INFO) ---
+    APP_STDERR="/dev/stderr"
+
+    echo "[INFO] Menjalankan: $EXEC_PATH ${APP_ARGS[*]}"
+    if [ -n "$DURATION" ]; then
+        echo "[INFO] Durasi dibatasi otomatis: ${DURATION}s"
+        timeout -s SIGINT "$DURATION" "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDERR"
+    else
+        echo "[INFO] Tekan Ctrl+C satu kali untuk menghentikan..."
+        "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDERR"
+    fi
 fi

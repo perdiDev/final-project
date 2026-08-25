@@ -92,6 +92,8 @@ struct AppConfig {
     std::string benchmarkFile{"benchmark_result.txt"};
     bool detectionDumpEnabled{false};
     std::string detectionDumpFile{"detections.jsonl"};
+
+	bool quietMode{false};
 };
 
 enum class ParseResult {
@@ -234,6 +236,11 @@ ParseResult parseArguments(int argc, char *argv[], AppConfig &config) {
             continue;
         }
 
+		if (argument == "--quiet") {
+			config.quietMode = true;
+			continue;
+		}
+
         std::string value;
         if (argument == "--config") {
             if (!readRequiredValue(argc, argv, i, argument, value)) {
@@ -329,7 +336,9 @@ public:
     DeepStreamApplication &operator=(const DeepStreamApplication &) = delete;
 
     int run() {
-        printConfiguration();
+		if (!config_.quietMode) {
+			printConfiguration();
+		}
 
         mainLoop_ = g_main_loop_new(nullptr, FALSE);
         if (mainLoop_ == nullptr) {
@@ -792,8 +801,6 @@ private:
         if (!linkElements({outputConverter, encoderCaps, encoder, parser, muxer, sink})) {
             return false;
         }
-
-        g_print("*** Output akan disimpan ke: %s ***\n", config_.outputFile.c_str());
         return true;
     }
 
@@ -864,9 +871,6 @@ private:
             loggerQueue_ = nullptr;
             return false;
         }
-
-        g_print("\n=== BENCHMARK AKTIF ===\n");
-        g_print("Menyimpan log ke: %s\n\n", config_.benchmarkFile.c_str());
         return true;
     }
 
@@ -905,8 +909,8 @@ private:
 
             logFile << formatTimestamp(data->wallClockUs) << ',' << data->frameNumber << ','
                     << data->mediaPtsMs << ',' << data->elapsedMs << ',' << data->fps << ','
-                    << data->latencyMs << ',' << data->latencyPreMuxMs << ',' << data->latencyMuxMs << ',' 
-                    << data->latencyInferMs << ',' << data->latencyTrackerMs << ',' << data->latencyPreOsdMs << ',' 
+                    << data->latencyMs << ',' << data->latencyPreMuxMs << ',' << data->latencyMuxMs << ','
+                    << data->latencyInferMs << ',' << data->latencyTrackerMs << ',' << data->latencyPreOsdMs << ','
                     << data->latencyOsdMs << ',' << data->latencyOutputMs << '\n';
             ++recordsSinceFlush;
             if (recordsSinceFlush >= kBenchmarkFlushIntervalRecords) {
@@ -1158,7 +1162,7 @@ private:
 
             const guint currentLatencyIndex = latencyIndex++;
             double currentLatency = currentLatencyIndex < measuredFrames ? latencyInfo[currentLatencyIndex].latency : 0.0;
-            
+
             double sumComponents = latMux + latInfer + latTracker + latPreOsd + latOsd + latOutput;
             double latPreMux = currentLatency - sumComponents;
             if (latPreMux < 0) latPreMux = 0;
@@ -1183,8 +1187,14 @@ private:
             data->latencyOsdMs = latOsd;
             data->latencyOutputMs = latOutput;
             data->wallClockUs = wallClockUs;
-            
+
             g_async_queue_push(loggerQueue_, data);
+
+            // --- TAMBAHKAN BARIS INI UNTUK LIVE STATS DI CONSOLE ---
+            g_print("\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms",
+                    data->frameNumber, data->fps, data->latencyMs);
+            fflush(stdout); // Memaksa terminal langsung mencetak teks
+            // -------------------------------------------------------
         }
 
         return GST_PAD_PROBE_OK;
@@ -1280,6 +1290,7 @@ private:
         switch (GST_MESSAGE_TYPE(message)) {
             case GST_MESSAGE_EOS:
                 removeSource(eosShutdownTimeoutId_);
+                g_print("\n");
                 g_print("End of stream (EOS) tercapai. Menutup pipeline dengan aman...\n");
                 g_main_loop_quit(mainLoop_);
                 break;
