@@ -43,7 +43,7 @@ CONFIG_FILE=""
 TRACKER=""
 TRACKER_PATH=""
 INPUT_MODE="file"
-INPUT_FILE="data/input/video_testing.mp4"
+INPUT_FILE="data/input/video-testing/realtime-1.mp4"
 CAMERA_FPS="30"
 OUTPUT_MODE="file"
 DURATION=""
@@ -457,9 +457,9 @@ if [ "${TESTING_MODE:-0}" -eq 1 ]; then
     APP_STDOUT="$RUN_DIR/app_stdout.log"
 
     if [ -n "$DURATION" ]; then
-        timeout -s SIGINT "$DURATION" "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDOUT"
+        timeout -s SIGINT "$DURATION" "$EXEC_PATH" "${APP_ARGS[@]}" > "$APP_STDOUT" 2>&1
     else
-        "$EXEC_PATH" "${APP_ARGS[@]}" 2> "$APP_STDOUT"
+        "$EXEC_PATH" "${APP_ARGS[@]}" > "$APP_STDOUT" 2>&1
     fi
 else
     # --- MODE DEBUG (DEFAULT, MUNCULKAN SEMUA INFO) ---

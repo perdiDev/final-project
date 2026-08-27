@@ -338,6 +338,8 @@ public:
     int run() {
 		if (!config_.quietMode) {
 			printConfiguration();
+		} else {
+			ttyFile_ = fopen("/dev/tty", "w");
 		}
 
         mainLoop_ = g_main_loop_new(nullptr, FALSE);
@@ -1191,9 +1193,15 @@ private:
             g_async_queue_push(loggerQueue_, data);
 
             // --- TAMBAHKAN BARIS INI UNTUK LIVE STATS DI CONSOLE ---
-            g_print("\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms",
-                    data->frameNumber, data->fps, data->latencyMs);
-            fflush(stdout); // Memaksa terminal langsung mencetak teks
+			if (ttyFile_ != nullptr) {
+                fprintf(ttyFile_, "\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms\033[K",
+                        data->frameNumber, data->fps, data->latencyMs);
+                fflush(ttyFile_);
+            } else {
+                g_print("\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms\033[K",
+                        data->frameNumber, data->fps, data->latencyMs);
+                fflush(stdout);
+            }
             // -------------------------------------------------------
         }
 
@@ -1417,6 +1425,11 @@ private:
     }
 
     void cleanup() {
+		if (ttyFile_ != nullptr) {
+            fprintf(ttyFile_, "\n");
+            fclose(ttyFile_);
+            ttyFile_ = nullptr;
+        }
         for (auto &probe : probes_) {
             if (probe.first && probe.second) {
                 gst_pad_remove_probe(probe.first, probe.second);
@@ -1491,6 +1504,7 @@ private:
     MetricsState metrics_;
     bool eosRequested_{false};
     bool pipelineError_{false};
+	FILE *ttyFile_{nullptr};
 };
 
 }  // namespace
