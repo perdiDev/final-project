@@ -339,7 +339,7 @@ public:
 		if (!config_.quietMode) {
 			printConfiguration();
 		} else {
-			ttyFile_ = fopen("dev/tty", "w");
+			ttyFile_ = fopen("/dev/tty", "w");
 		}
 
         mainLoop_ = g_main_loop_new(nullptr, FALSE);
@@ -1194,11 +1194,11 @@ private:
 
             // --- TAMBAHKAN BARIS INI UNTUK LIVE STATS DI CONSOLE ---
 			if (ttyFile_ != nullptr) {
-                fprintf(ttyFile_, "\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms",
+                fprintf(ttyFile_, "\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms\033[K",
                         data->frameNumber, data->fps, data->latencyMs);
                 fflush(ttyFile_);
             } else {
-                g_print("\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms",
+                g_print("\r\033[1;36m[LIVE BENCHMARK]\033[0m Frame: %-5lu | FPS: %-6.2f | Latency: %-6.2f ms\033[K",
                         data->frameNumber, data->fps, data->latencyMs);
                 fflush(stdout);
             }
