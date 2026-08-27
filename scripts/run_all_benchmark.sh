@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Automasi 60 Run Benchmark (6 Model x 2 Tracker x 5 Repetisi)
+# Automasi Run Benchmark (5 Video x 6 Model x 2 Tracker x 5 Repetisi = 300 Run)
 # ==============================================================================
 set -e
 
@@ -23,7 +23,15 @@ done
 
 COOLDOWN_TIME=60
 REPEAT_COUNT=5
-VIDEO_INPUT="data/input/video_testing.mp4"
+
+# === GANTI VIDEO_INPUT MENJADI ARRAY VIDEO_INPUTS ===
+VIDEO_INPUTS=(
+    "data/input/video_testing.mp4"
+    "data/input/video_testing-2.mp4"
+    "data/input/video_testing-3.mp4"
+    "data/input/video_testing-4.mp4"
+    "data/input/video_testing-5.mp4"
+)
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT" || exit 1
@@ -40,14 +48,17 @@ echo -e "${YELLOW}[INFO] Status jetson_clocks aktif. (Detail disembunyikan untuk
 MODELS=("yolov8n_kitti" "yolov9t_kitti" "yolov10n_kitti" "yolov26n_kitti" "yolov8n_kitti_efficientnms" "yolov9t_kitti_efficientnms")
 TRACKERS=("nvdcf" "nvsort")
 
-TOTAL_SCENARIOS=$((${#MODELS[@]} * ${#TRACKERS[@]}))
+# --- HITUNG ULANG TOTAL SKENARIO ---
+TOTAL_SCENARIOS=$((${#VIDEO_INPUTS[@]} * ${#MODELS[@]} * ${#TRACKERS[@]}))
 TOTAL_RUNS=$((TOTAL_SCENARIOS * REPEAT_COUNT))
 
 echo -e "${CYAN}======================================================================${NC}"
 echo -e "${CYAN}MEMULAI BATCH BENCHMARK TUGAS AKHIR${NC}"
+echo -e "Video Input       : ${#VIDEO_INPUTS[@]} file"
 echo -e "Model             : ${#MODELS[@]}"
 echo -e "Tracker           : ${#TRACKERS[@]}"
 echo -e "Pengulangan       : $REPEAT_COUNT kali"
+echo -e "Total Skenario    : $TOTAL_SCENARIOS"
 echo -e "Total Run         : $TOTAL_RUNS"
 echo -e "Mode Debug (Log)  : $(if [ "$DEBUG_MODE" -eq 1 ]; then echo -e "${RED}AKTIF${NC}"; else echo -e "${GREEN}NON-AKTIF (BERSIH)${NC}"; fi)"
 echo -e "${CYAN}======================================================================${NC}\n"
@@ -55,60 +66,71 @@ echo -e "${CYAN}================================================================
 SCENARIO_NO=0
 RUN_NO=0
 
-for MODEL in "${MODELS[@]}"; do
-    for TRACKER in "${TRACKERS[@]}"; do
-        SCENARIO_NO=$((SCENARIO_NO + 1))
-        COMBINED_NAME="${MODEL}_${TRACKER}"
-        CONFIG_FILE="config/pgie_${MODEL}.txt"
+# === TAMBAHKAN LOOP UNTUK VIDEO ===
+for VIDEO in "${VIDEO_INPUTS[@]}"; do
+    VIDEO_NAME=$(basename "$VIDEO")
+    VIDEO_BASE="${VIDEO_NAME%.*}" # Hapus ekstensi .mp4 untuk penamaan folder
 
-        echo -e "${PURPLE}======================================================================${NC}"
-        echo -e "${PURPLE}[SCENARIO $SCENARIO_NO/$TOTAL_SCENARIOS] $COMBINED_NAME${NC}"
-        echo -e "${PURPLE}======================================================================${NC}"
+    echo -e "${YELLOW}>>> MEMULAI PENGUJIAN UNTUK VIDEO: $VIDEO_NAME <<<${NC}\n"
 
-        if [ ! -f "$CONFIG_FILE" ]; then
-            echo -e "${RED}[ERROR] File $CONFIG_FILE tidak ditemukan!${NC}"
-            continue
-        fi
-
-        for ((REPEAT=1; REPEAT<=REPEAT_COUNT; REPEAT++)); do
-            RUN_NO=$((RUN_NO + 1))
+    for MODEL in "${MODELS[@]}"; do
+        for TRACKER in "${TRACKERS[@]}"; do
+            SCENARIO_NO=$((SCENARIO_NO + 1))
             
-            echo ""
-            echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-            echo -e "${CYAN}[RUN $RUN_NO/$TOTAL_RUNS]${NC} | ${GREEN}SKENARIO: $COMBINED_NAME${NC} | ${YELLOW}REPETISI: $REPEAT/$REPEAT_COUNT${NC}"
-            echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+            # Tambahkan nama video ke kombinasi agar folder hasilnya terpisah
+            COMBINED_NAME="${MODEL}_${TRACKER}_${VIDEO_BASE}"
+            CONFIG_FILE="config/pgie_${MODEL}.txt"
 
-            # Menyusun argumen untuk run_benchmark.sh
-            BENCHMARK_ARGS=(
-                --config "$CONFIG_FILE"
-                --model "$COMBINED_NAME"
-                --tracker "$TRACKER"
-                --input file
-                --input-file "$VIDEO_INPUT"
-            )
-            
-            # Jika run_all dijalankan TANPA --debug, kita set run_benchmark menjadi mode --testing
-            if [ "$DEBUG_MODE" -eq 0 ]; then
-                BENCHMARK_ARGS+=(--testing)
+            echo -e "${PURPLE}======================================================================${NC}"
+            echo -e "${PURPLE}[SCENARIO $SCENARIO_NO/$TOTAL_SCENARIOS] $COMBINED_NAME${NC}"
+            echo -e "${PURPLE}======================================================================${NC}"
+
+            if [ ! -f "$CONFIG_FILE" ]; then
+                echo -e "${RED}[ERROR] File $CONFIG_FILE tidak ditemukan!${NC}"
+                continue
             fi
 
-            # Eksekusi
-            ./scripts/run_benchmark.sh "${BENCHMARK_ARGS[@]}"
+            for ((REPEAT=1; REPEAT<=REPEAT_COUNT; REPEAT++)); do
+                RUN_NO=$((RUN_NO + 1))
+                
+                echo ""
+                echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+                echo -e "${CYAN}[RUN $RUN_NO/$TOTAL_RUNS]${NC} | ${GREEN}SKENARIO: $COMBINED_NAME${NC} | ${YELLOW}REPETISI: $REPEAT/$REPEAT_COUNT${NC}"
+                echo -e "${CYAN}----------------------------------------------------------------------${NC}"
 
-            echo -e "${GREEN}[INFO] Run $REPEAT/$REPEAT_COUNT selesai.${NC}"
-            
-            sudo sync
-            sudo sysctl -q -w vm.drop_caches=3
+                # Menyusun argumen untuk run_benchmark.sh
+                BENCHMARK_ARGS=(
+                    --config "$CONFIG_FILE"
+                    --model "$COMBINED_NAME"
+                    --tracker "$TRACKER"
+                    --input file
+                    --input-file "$VIDEO"
+                )
+                
+                # Jika run_all dijalankan TANPA --debug, kita set run_benchmark menjadi mode --testing
+                if [ "$DEBUG_MODE" -eq 0 ]; then
+                    BENCHMARK_ARGS+=(--testing)
+                fi
 
-            if [ "$REPEAT" -lt "$REPEAT_COUNT" ] || [ "$COMBINED_NAME" != "${MODELS[-1]}_${TRACKERS[-1]}" ]; then
-                echo -e "${YELLOW}[INFO] Cooldown $COOLDOWN_TIME detik...${NC}"
-                sleep "$COOLDOWN_TIME"
-            fi
+                # Eksekusi
+                ./scripts/run_benchmark.sh "${BENCHMARK_ARGS[@]}"
+
+                echo -e "${GREEN}[INFO] Run $REPEAT/$REPEAT_COUNT selesai.${NC}"
+                
+                sudo sync
+                sudo sysctl -q -w vm.drop_caches=3
+
+                # Logika cooldown disederhanakan: selama bukan run paling terakhir, jalankan cooldown
+                if [ "$RUN_NO" -lt "$TOTAL_RUNS" ]; then
+                    echo -e "${YELLOW}[INFO] Cooldown $COOLDOWN_TIME detik...${NC}"
+                    sleep "$COOLDOWN_TIME"
+                fi
+            done
+            echo -e "${GREEN}[INFO] Skenario $COMBINED_NAME (5 Repetisi) selesai.${NC}\n"
         done
-        echo -e "${GREEN}[INFO] Skenario $COMBINED_NAME (5 Repetisi) selesai.${NC}\n"
     done
 done
 
 echo -e "${GREEN}======================================================================${NC}"
-echo -e "${GREEN}SEMUA BENCHMARK TELAH SELESAI!${NC}"
+echo -e "${GREEN}SEMUA $TOTAL_RUNS BENCHMARK TELAH SELESAI!${NC}"
 echo -e "${GREEN}======================================================================${NC}"
