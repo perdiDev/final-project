@@ -24,13 +24,18 @@ done
 COOLDOWN_TIME=60
 REPEAT_COUNT=5
 
-# === GANTI VIDEO_INPUT MENJADI ARRAY VIDEO_INPUTS ===
+# Previous Skenario
+# VIDEO_INPUTS=(
+#     "data/input/video_testing.mp4"
+#     "data/input/video_testing-2.mp4"
+#     "data/input/video_testing-3.mp4"
+#     "data/input/video_testing-4.mp4"
+#     "data/input/video_testing-5.mp4"
+# )
+#
+
 VIDEO_INPUTS=(
-    "data/input/video_testing.mp4"
-    "data/input/video_testing-2.mp4"
-    "data/input/video_testing-3.mp4"
-    "data/input/video_testing-4.mp4"
-    "data/input/video_testing-5.mp4"
+    "data/input/video-testing/realtime-1.mp4"
 )
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -76,7 +81,7 @@ for VIDEO in "${VIDEO_INPUTS[@]}"; do
     for MODEL in "${MODELS[@]}"; do
         for TRACKER in "${TRACKERS[@]}"; do
             SCENARIO_NO=$((SCENARIO_NO + 1))
-            
+
             # Tambahkan nama video ke kombinasi agar folder hasilnya terpisah
             COMBINED_NAME="${MODEL}_${TRACKER}_${VIDEO_BASE}"
             CONFIG_FILE="config/pgie_${MODEL}.txt"
@@ -92,7 +97,7 @@ for VIDEO in "${VIDEO_INPUTS[@]}"; do
 
             for ((REPEAT=1; REPEAT<=REPEAT_COUNT; REPEAT++)); do
                 RUN_NO=$((RUN_NO + 1))
-                
+
                 echo ""
                 echo -e "${CYAN}----------------------------------------------------------------------${NC}"
                 echo -e "${CYAN}[RUN $RUN_NO/$TOTAL_RUNS]${NC} | ${GREEN}SKENARIO: $COMBINED_NAME${NC} | ${YELLOW}REPETISI: $REPEAT/$REPEAT_COUNT${NC}"
@@ -106,7 +111,7 @@ for VIDEO in "${VIDEO_INPUTS[@]}"; do
                     --input file
                     --input-file "$VIDEO"
                 )
-                
+
                 # Jika run_all dijalankan TANPA --debug, kita set run_benchmark menjadi mode --testing
                 if [ "$DEBUG_MODE" -eq 0 ]; then
                     BENCHMARK_ARGS+=(--testing)
@@ -116,14 +121,22 @@ for VIDEO in "${VIDEO_INPUTS[@]}"; do
                 ./scripts/run_benchmark.sh "${BENCHMARK_ARGS[@]}"
 
                 echo -e "${GREEN}[INFO] Run $REPEAT/$REPEAT_COUNT selesai.${NC}"
-                
+
                 sudo sync
                 sudo sysctl -q -w vm.drop_caches=3
 
                 # Logika cooldown disederhanakan: selama bukan run paling terakhir, jalankan cooldown
                 if [ "$RUN_NO" -lt "$TOTAL_RUNS" ]; then
-                    echo -e "${YELLOW}[INFO] Cooldown $COOLDOWN_TIME detik...${NC}"
-                    sleep "$COOLDOWN_TIME"
+                    for (( i=0; i<=COOLDOWN_TIME; i++ )); do
+                        # Gunakan -ne agar echo tidak membuat baris baru, \r kembali ke awal, \033[K hapus sisa teks
+                        echo -ne "\r${YELLOW}[INFO] Cooldown $COOLDOWN_TIME detik [$i/$COOLDOWN_TIME]${NC}\033[K"
+
+                        # Jangan sleep di iterasi terakhir agar langsung lanjut
+                        if [ "$i" -lt "$COOLDOWN_TIME" ]; then
+                            sleep 1
+                        fi
+                    done
+                    echo "" # Pindah ke baris baru setelah loop cooldown selesai
                 fi
             done
             echo -e "${GREEN}[INFO] Skenario $COMBINED_NAME (5 Repetisi) selesai.${NC}\n"
