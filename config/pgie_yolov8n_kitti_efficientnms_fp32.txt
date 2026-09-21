@@ -1,0 +1,28 @@
+[property]
+gpu-id=0
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+
+# Engine hasil utils/trt_efficientnms/build_efficientnms_engine.py --fp32.
+# Sengaja engine-only: ONNX asli tidak memuat empat output EfficientNMS dan
+# tidak dapat dipakai nvinfer untuk membangun ulang engine ini secara setara.
+model-engine-file=../models/yolov8n_kitti_efficientnms_fp32.engine
+
+network-mode=0
+num-detected-classes=3
+gie-unique-id=1
+process-mode=1
+network-type=0
+maintain-aspect-ratio=1
+cluster-mode=4
+batch-size=1
+
+# Empat output plugin EfficientNMS_TRT
+output-blob-names=num_detections;detection_boxes;detection_scores;detection_classes
+parse-bbox-func-name=NvDsInferParseEfficientNMS
+custom-lib-path=../lib/libnvdsinfer_custom_impl_EfficientNMS.so
+labelfile-path=../labels/labels_kitti_custom.txt
+
+[class-attrs-all]
+# NMS sudah dilakukan di GPU oleh EfficientNMS_TRT.
+pre-cluster-threshold=0.05
