@@ -3,6 +3,7 @@ build/
 
 data/output/*
 data/benchmark/*
+data/benchmark-temp/*
 
 __pycache__/
 *.pyc
