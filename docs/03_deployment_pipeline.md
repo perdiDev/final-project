@@ -46,6 +46,42 @@ Parameter kunci yang **konsisten** di seluruh model KITTI (`num-detected-classes
 dijaga sama, supaya perbedaan hasil murni berasal dari perbedaan arsitektur/bobot model, bukan
 dari perbedaan setting inferensi.
 
+### Varian FP32 (opsional, bukan default)
+
+Untuk setiap config KITTI di atas juga tersedia varian `_fp32` yang identik kecuali
+precision-nya, dipakai untuk eksperimen pembanding FP16 vs FP32 (bukan menggantikan baseline
+FP16):
+
+```
+config/pgie_yolov8n_kitti_fp32.txt
+config/pgie_yolov9t_kitti_fp32.txt
+config/pgie_yolov10n_kitti_fp32.txt
+config/pgie_yolov26n_kitti_fp32.txt
+config/pgie_yolov8n_coco_fp32.txt
+config/pgie_yolov8n_kitti_efficientnms_fp32.txt
+config/pgie_yolov9t_kitti_efficientnms_fp32.txt
+```
+
+Perbedaan config `_fp32` terhadap config FP16 aslinya hanya dua baris:
+
+```diff
+- model-engine-file=../models/<model>.onnx_b1_gpu0_fp16.engine
++ model-engine-file=../models/<model>.onnx_b1_gpu0_fp32.engine
+
+- network-mode=2
++ network-mode=0
+```
+
+Engine `.engine` FP16 dan FP32 disimpan berdampingan di `models/` (nama file membedakan
+precision), supaya cache engine tidak pernah saling tertukar antar precision. Engine standar
+(non-EfficientNMS) dibangun otomatis oleh `nvinfer` pada run pertama; engine EfficientNMS
+harus dibangun manual (lihat §3.5.1) karena ONNX baseline tidak memuat plugin NMS.
+
+Karena `scripts/run_benchmark.sh` mem-*parse* nama file `pgie_*.txt` menjadi nama model,
+varian ini otomatis muncul di `--list` sebagai model terpisah, misalnya `yolov8n_kitti_fp32`.
+Jalankan dengan `--model yolov8n_kitti_fp32` untuk benchmark presisi FP32, terpisah dari hasil
+FP16 `yolov8n_kitti`.
+
 ## 3.3 Tahapan Pipeline DeepStream (`src/main.cpp`)
 
 | Tahap | Elemen GStreamer/DeepStream | Fungsi |
@@ -79,6 +115,43 @@ poin tambahan), langkah yang diperlukan:
 2. Dump `NvDsObjectMeta` (kelas + bbox + confidence) per frame ke file JSON/txt.
 3. Cocokkan dengan ground-truth label KITTI menggunakan IoU matcher sederhana (atau
    `pycocotools`) untuk menghitung mAP versi "as-deployed".
+
+### 3.5.1 Membangun Engine EfficientNMS (FP16 & FP32)
+
+`utils/trt_efficientnms/build_efficientnms_engine.py` mendukung flag `--fp16` (default) dan
+`--fp32`. Wrapper `scripts/build_efficientnms_engines.sh` menjalankan script ini untuk kedua
+model (`yolov8n_kitti`, `yolov9t_kitti`) dan kedua precision, sambil **melewati (skip) build
+jika file `.engine` tujuan sudah ada** — aman dijalankan berulang kali tanpa membangun ulang
+engine yang sudah tersedia:
+
+```bash
+# Lihat status tiap kombinasi model/precision tanpa membangun apa pun
+./scripts/build_efficientnms_engines.sh --list
+
+# Build seluruh kombinasi (fp16+fp32) yang belum ada; yang sudah ada otomatis dilewati
+./scripts/build_efficientnms_engines.sh
+
+# Hanya satu model, kedua precision
+./scripts/build_efficientnms_engines.sh --model yolov8n_kitti
+
+# Hanya precision fp32, semua model
+./scripts/build_efficientnms_engines.sh --precision fp32
+
+# Paksa membangun ulang walau file engine sudah ada (menimpa)
+./scripts/build_efficientnms_engines.sh --force
+```
+
+Penamaan output mengikuti `model-engine-file` di `config/pgie_*_efficientnms*.txt`:
+
+```text
+models/yolov8n_kitti_efficientnms.engine        # FP16 (baseline)
+models/yolov8n_kitti_efficientnms_fp32.engine   # FP32 (pembanding)
+models/yolov9t_kitti_efficientnms.engine        # FP16 (baseline)
+models/yolov9t_kitti_efficientnms_fp32.engine   # FP32 (pembanding)
+```
+
+Script ini harus dijalankan di Jetson (butuh TensorRT + Python bindings + GPU), tidak bisa di
+lingkungan pengembangan biasa. ONNX sumber di `models/` tidak pernah diubah.
 
 ## 3.5 Item Verifikasi Khusus YOLO26n
 

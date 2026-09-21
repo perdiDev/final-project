@@ -18,7 +18,7 @@ pengujian), variabel berikut dijaga tetap sama di setiap run:
 |---|---|---|
 | Sumber input | File video yang sama (`data/input/video_testing.mp4`) | Live ZED feed punya konten adegan yang tidak identik antar run; file memastikan setiap model "melihat" input yang persis sama |
 | Mode output | `file` (encode ke MP4) untuk seluruh model | Supaya overhead encoding/muxing konstan di semua run, tidak bias ke satu model |
-| Precision | FP16 (`network-mode=2`) di semua config | Precision bukan variabel bebas pada eksperimen ini |
+| Precision | FP16 (`network-mode=2`) di semua config | Precision bukan variabel bebas pada eksperimen utama; perbandingan FP16 vs FP32 dijalankan sebagai eksperimen terpisah (lihat catatan di bawah) |
 | Tracker config | `config/tracker_nvdcf.yml` jika tersedia, atau profil tracker pertama yang ditemukan | Untuk eksperimen pengaruh tracker, gunakan `--tracker <path-yaml>` sesuai file `config/tracker_*.yml`/`*.yaml` yang tersedia |
 | Jetson power mode | Tetap (catat dengan `nvpmodel -q`, idealnya `jetson_clocks` aktif) | Perubahan power mode di tengah eksperimen membuat FPS/daya antar model tidak sebanding |
 | Durasi/panjang klip | Sama untuk semua model (gunakan `--duration <detik>`) | Supaya jumlah frame yang diukur & window statistik konsisten |
@@ -27,6 +27,21 @@ pengujian), variabel berikut dijaga tetap sama di setiap run:
 **Kalau ingin mengganti satu variabel** (misal: ingin tahu pengaruh live ZED feed, atau
 pengaruh output RTSP vs file), lakukan itu sebagai eksperimen terpisah yang dinyatakan
 eksplisit — jangan campur dengan eksperimen utama.
+
+### Eksperimen tambahan: FP16 vs FP32
+
+Setiap model KITTI juga punya config pembanding `pgie_<model>_fp32.txt` (lihat
+[03_deployment_pipeline.md](03_deployment_pipeline.md) §3.2), yang identik dengan config FP16
+kecuali `network-mode` dan `model-engine-file`. Jalankan sebagai sesi terpisah, jangan campur
+dengan hasil FP16 utama:
+
+```bash
+./scripts/run_benchmark.sh --model yolov8n_kitti       --duration 180   # FP16 (baseline)
+./scripts/run_benchmark.sh --model yolov8n_kitti_fp32   --duration 180   # FP32 (pembanding)
+```
+
+Kedua run tetap tersimpan terpisah di `data/benchmark/<model>/<timestamp>/`, sehingga tabel
+hasil akhirnya bisa membandingkan `yolov8n_kitti` vs `yolov8n_kitti_fp32` baris-per-baris.
 
 ## 4.2 Menjalankan Benchmark — `scripts/run_benchmark.sh`
 
