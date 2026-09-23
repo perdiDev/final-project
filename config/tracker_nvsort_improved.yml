@@ -1,0 +1,60 @@
+%YAML:1.0
+# NvSORT (Improved) untuk yolov8n_kitti_nvsort: dituning agar bounding box
+# tidak "muncul-hilang" (flickering) akibat YOLOv8n-KITTI yang kadang meleset
+# mendeteksi objek selama 1-2 frame (motion blur, oklusi sebagian, dll).
+#
+# Dasar teknis (dari dokumentasi resmi Gst-nvtracker/NvMultiObjectTracker):
+#   - Selama masa "probation" (Tentative), tracker BELUM melaporkan bbox ke
+#     downstream/OSD sampai target dikonfirmasi (probationAge frame berturut2
+#     berhasil match). Jika gagal match sebelum itu, target di-"early
+#     terminate" dan proses mulai dari nol lagi -> ini penyebab utama objek
+#     baru terlihat berkedip-kedip sebelum stabil.
+#   - Saat target aktif kehilangan match (oklusi/miss deteksi), ia masuk mode
+#     shadow tracking; ID internal dipertahankan sampai maxShadowTrackingAge,
+#     TAPI bbox tidak digambar lagi sampai match ulang. Karena itu identitas
+#     (ID) harus dipertahankan selama mungkin agar begitu YOLO mendeteksi lagi,
+#     box "menyambung" dengan ID lama, bukan terasa sebagai objek baru.
+#
+# Perubahan dari config/tracker_nvsort.yml (baseline):
+#   - probationAge 3 -> 2         : konfirmasi & tampil lebih cepat
+#   - earlyTerminationAge 1 -> 5  : toleransi beberapa frame gagal match
+#                                   sebelum target tentative dibuang
+#   - maxShadowTrackingAge 30->45 : identitas dipertahankan lebih lama saat
+#                                   oklusi/miss deteksi berlangsung
+#   - minTrackerConfidence 0.2->0.15 : lebih toleran sebelum dianggap tidak
+#                                   reliable (masuk shadow mode)
+#   - Kalman filter dibuat lebih halus (turunkan process noise, naikkan
+#     measurement noise pada deteksi) agar posisi/ukuran bbox tidak bergetar.
+
+BaseConfig:
+  minDetectorConfidence: 0.1   # [Modifikasi] saring deteksi sangat lemah (<10%) sebelum masuk tracker
+
+TargetManagement:
+  enableBboxUnClipping: 1
+  maxTargetsPerStream: 150
+  minIouDiff4NewTarget: 0.5
+  minTrackerConfidence: 0.15   # [Modifikasi] turun dari 0.2
+  probationAge: 2              # [Modifikasi] turun dari 3
+  maxShadowTrackingAge: 45     # [Modifikasi] naik dari 30
+  earlyTerminationAge: 5       # [Modifikasi] naik dari 1
+
+TrajectoryManagement:
+  useUniqueID: 0
+
+DataAssociator:
+  dataAssociatorType: 0
+  associationMatcherType: 0
+  checkClassMatch: 1
+  minMatchingScore4Overall: 0.0
+  minMatchingScore4SizeSimilarity: 0.6
+  minMatchingScore4Iou: 0.0
+  matchingScoreWeight4SizeSimilarity: 0.0
+  matchingScoreWeight4Iou: 1.0
+
+StateEstimator:
+  stateEstimatorType: 1
+  processNoiseVar4Loc: 1.0            # [Modifikasi] turun dari 2.0 -> posisi lebih stabil
+  processNoiseVar4Size: 0.5           # [Modifikasi] turun dari 1.0 -> ukuran box lebih stabil
+  processNoiseVar4Vel: 0.1
+  measurementNoiseVar4Detector: 8.0   # [Modifikasi] naik dari 4.0 -> deteksi mentah yang noisy tidak langsung "dipercaya" penuh
+  measurementNoiseVar4Tracker: 16.0

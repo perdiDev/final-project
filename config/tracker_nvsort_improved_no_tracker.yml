@@ -1,0 +1,56 @@
+%YAML:1.0
+# COPY dari tracker_nvsort_improved.yml, dengan "memori" tracker antar-frame
+# DINONAKTIFKAN, untuk perbandingan visual: seperti apa hasilnya TANPA tracker
+# (hanya bbox mentah dari YOLOv8n-KITTI per frame, tanpa smoothing/pengisi gap).
+#
+# Cara menonaktifkan tracking dilakukan lewat kombinasi parameter berikut
+# (sesuai rekomendasi resmi tim NVIDIA di forum developer mereka: setting
+# maxShadowTrackingAge=0 & earlyTerminationAge=0 "disables shadow tracking
+# and output bbox data immediately"):
+#   - probationAge: 0            -> tidak ada periode konfirmasi (langsung aktif)
+#   - earlyTerminationAge: 0     -> tidak ada toleransi gagal-match sama sekali
+#   - maxShadowTrackingAge: 0    -> target langsung diterminasi begitu 1 frame
+#                                    gagal match, tidak ada shadow tracking/
+#                                    prediksi sama sekali (identik dengan tidak
+#                                    ada tracker: box hanya tampil saat PGIE
+#                                    berhasil deteksi di frame itu juga)
+#   - stateEstimatorType: 0 (DUMMY) -> tidak ada Kalman filter, posisi bbox =
+#                                    bbox mentah hasil deteksi PGIE apa adanya
+#
+# nvtracker (elemen GStreamer) tetap berjalan di pipeline (arsitektur app ini
+# selalu menyisipkan nvtracker), tapi dengan profil ini ia berperan sebagai
+# pass-through: hanya memberi tracking-id, tanpa smoothing atau toleransi
+# kehilangan deteksi -> perilakunya setara dengan "tanpa tracker".
+
+BaseConfig:
+  minDetectorConfidence: 0.1
+
+TargetManagement:
+  enableBboxUnClipping: 1
+  maxTargetsPerStream: 150
+  minIouDiff4NewTarget: 0.5
+  minTrackerConfidence: 0.15
+  probationAge: 0               # [Dinonaktifkan] tanpa masa konfirmasi
+  maxShadowTrackingAge: 0       # [Dinonaktifkan] tanpa shadow tracking sama sekali
+  earlyTerminationAge: 0        # [Dinonaktifkan] tanpa toleransi gagal-match
+
+TrajectoryManagement:
+  useUniqueID: 0
+
+DataAssociator:
+  dataAssociatorType: 0
+  associationMatcherType: 0
+  checkClassMatch: 1
+  minMatchingScore4Overall: 0.0
+  minMatchingScore4SizeSimilarity: 0.6
+  minMatchingScore4Iou: 0.0
+  matchingScoreWeight4SizeSimilarity: 0.0
+  matchingScoreWeight4Iou: 1.0
+
+StateEstimator:
+  stateEstimatorType: 0        # [Dinonaktifkan] DUMMY estimator, tanpa Kalman filter/smoothing
+  processNoiseVar4Loc: 1.0
+  processNoiseVar4Size: 0.5
+  processNoiseVar4Vel: 0.1
+  measurementNoiseVar4Detector: 8.0
+  measurementNoiseVar4Tracker: 16.0
