@@ -25,6 +25,16 @@
 #                                   reliable (masuk shadow mode)
 #   - Kalman filter dibuat lebih halus (turunkan process noise, naikkan
 #     measurement noise pada deteksi) agar posisi/ukuran bbox tidak bergetar.
+#   - minMatchingScore4SizeSimilarity 0.6 -> 0.0 : nilai ini adalah AMBANG
+#     MINIMUM (gate), bukan bobot skor. Karena matchingScoreWeight4SizeSimilarity
+#     memang sudah 0 (size similarity sengaja tidak dipakai untuk skor akhir,
+#     hanya IoU lewat matchingScoreWeight4Iou: 1.0), ambang 0.6 tsb tetap aktif
+#     sebagai syarat lolos/tidaknya sebuah asosiasi. Akibatnya, match yang IoU-
+#     nya sebenarnya bagus tetap bisa DITOLAK hanya karena ukuran bbox berubah
+#     sedikit (mis. akibat oklusi sebagian/perspektif) -> memicu flicker pada
+#     kendaraan tertentu (biasanya kendaraan besar seperti truk/bus yang bbox-
+#     nya lebih sering berubah ukuran). Diturunkan ke 0.0 agar konsisten dengan
+#     bobotnya yang memang 0 (gate ini efektif dinonaktifkan).
 
 BaseConfig:
   minDetectorConfidence: 0.1   # [Modifikasi] saring deteksi sangat lemah (<10%) sebelum masuk tracker
@@ -46,7 +56,7 @@ DataAssociator:
   associationMatcherType: 0
   checkClassMatch: 1
   minMatchingScore4Overall: 0.0
-  minMatchingScore4SizeSimilarity: 0.6
+  minMatchingScore4SizeSimilarity: 0.0  # [Modifikasi] turun dari 0.6
   minMatchingScore4Iou: 0.0
   matchingScoreWeight4SizeSimilarity: 0.0
   matchingScoreWeight4Iou: 1.0

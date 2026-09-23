@@ -1,0 +1,95 @@
+%YAML:1.0
+# NvDCF (Improved) untuk yolov8n_kitti: sama seperti tracker_nvsort_improved.yml,
+# dituning agar bounding box tidak "muncul-hilang" (flickering) akibat YOLOv8n-
+# KITTI yang kadang meleset mendeteksi objek selama 1-2 frame (motion blur,
+# oklusi sebagian, dll). Bedanya dengan varian NvSORT: profil ini memakai
+# discriminative correlation filter (DCF) berbasis fitur visual (color names),
+# bukan cuma motion-model (Kalman + IoU).
+#
+# Kenapa NvDCF > NvSORT untuk kasus "bbox hilang sesaat"?
+#   - NvSORT murni motion-only: kalau detektor gagal match pada suatu frame,
+#     tracker hanya bisa menebak posisi lewat prediksi Kalman, dan target masuk
+#     shadow-tracking (bbox TIDAK digambar) sampai match ulang dengan deteksi.
+#   - NvDCF punya "visual tracker" (correlation filter) yang mengestimasi
+#     posisi objek langsung dari isi gambar setiap frame, independen dari
+#     hasil detektor pada frame itu. Estimasi ini diperlakukan sebagai
+#     pengukuran tambahan ke state estimator (lihat measurementNoiseVar4Tracker
+#     di bawah) sehingga track tetap "hidup" dan bbox tetap tampil walau
+#     detektor meleset 1-2 frame -- inilah yang secara resmi jadi alasan
+#     proyek ini memilih profil NvDCF (lihat docs/01_scope_and_architecture.md
+#     Bab 1.4: "Kenapa NvDCF tracker ditambahkan setelah deteksi?").
+#
+# Perubahan dari config/tracker_nvdcf.yml (baseline/default repo):
+#   - minDetectorConfidence 0.0 -> 0.1     : saring deteksi sangat lemah (<10%)
+#                                             sebelum masuk tracker
+#   - probationAge 3 -> 2                  : konfirmasi & tampil lebih cepat
+#   - earlyTerminationAge 1 -> 5           : toleransi beberapa frame gagal
+#                                             match sebelum target tentative
+#                                             dibuang (visual tracker tetap
+#                                             mengisi kekosongan di antaranya)
+#   - maxShadowTrackingAge 30 -> 45        : identitas dipertahankan lebih
+#                                             lama saat oklusi/miss deteksi
+#   - minTrackerConfidence 0.2 -> 0.15     : lebih toleran sebelum dianggap
+#                                             tidak reliable
+#   - minMatchingScore4SizeSimilarity 0.6 -> 0.0 : nilai ini adalah AMBANG
+#     MINIMUM (gate), bukan bobot skor. Karena matchingScoreWeight4SizeSimilarity
+#     memang sudah 0 (size similarity sengaja tidak dipakai untuk skor akhir,
+#     hanya visual + IoU yang dipakai), ambang 0.6 tsb tetap aktif sebagai
+#     syarat lolos/tidaknya sebuah asosiasi -> match yang visual+IoU-nya
+#     sebenarnya bagus tetap bisa DITOLAK hanya karena ukuran bbox berubah
+#     sedikit (oklusi sebagian/perspektif). Diturunkan ke 0.0 agar konsisten
+#     dengan bobotnya yang memang 0 (gate ini efektif dinonaktifkan). Bug yang
+#     sama ada di tracker_nvdcf.yml dan tracker_nvdcf_perf.yml.
+#   - minMatchingScore4VisualSimilarity 0.7 -> 0.5 : motion blur & perubahan
+#     sudut pandang kendaraan menurunkan kualitas fitur visual (color names)
+#     antar-frame; ambang 0.7 terlalu ketat untuk kondisi ini dan bisa menolak
+#     re-asosiasi yang sebenarnya valid. Diturunkan ke 0.5 agar lebih toleran,
+#     tapi masih cukup ketat untuk mencegah ID switch antar objek yang mirip.
+#   - Kalman filter dibuat lebih halus (turunkan process noise, naikkan
+#     measurement noise pada deteksi) agar posisi/ukuran bbox tidak bergetar,
+#     senada dengan tracker_nvsort_improved.yml.
+
+BaseConfig:
+  minDetectorConfidence: 0.1   # [Modifikasi] saring deteksi sangat lemah (<10%) sebelum masuk tracker
+
+TargetManagement:
+  enableBboxUnClipping: 1
+  maxTargetsPerStream: 150
+  minIouDiff4NewTarget: 0.5
+  minTrackerConfidence: 0.15   # [Modifikasi] turun dari 0.2
+  probationAge: 2              # [Modifikasi] turun dari 3
+  maxShadowTrackingAge: 45     # [Modifikasi] naik dari 30
+  earlyTerminationAge: 5       # [Modifikasi] naik dari 1
+
+TrajectoryManagement:
+  useUniqueID: 0
+
+DataAssociator:
+  dataAssociatorType: 0
+  associationMatcherType: 0
+  checkClassMatch: 1
+  minMatchingScore4Overall: 0.0
+  minMatchingScore4SizeSimilarity: 0.0   # [Modifikasi] turun dari 0.6 (gate tidak konsisten dgn weight 0)
+  minMatchingScore4Iou: 0.0
+  minMatchingScore4VisualSimilarity: 0.5 # [Modifikasi] turun dari 0.7 -> lebih toleran ke motion blur
+  matchingScoreWeight4VisualSimilarity: 0.6
+  matchingScoreWeight4SizeSimilarity: 0.0
+  matchingScoreWeight4Iou: 0.4
+
+StateEstimator:
+  stateEstimatorType: 1
+  processNoiseVar4Loc: 1.0            # [Modifikasi] turun dari 2.0 -> posisi lebih stabil
+  processNoiseVar4Size: 0.5           # [Modifikasi] turun dari 1.0 -> ukuran box lebih stabil
+  processNoiseVar4Vel: 0.1
+  measurementNoiseVar4Detector: 8.0   # [Modifikasi] naik dari 4.0 -> deteksi mentah yang noisy tidak langsung "dipercaya" penuh
+  measurementNoiseVar4Tracker: 16.0
+
+VisualTracker:
+  visualTrackerType: 1
+  useColorNames: 1
+  useHog: 0
+  featureImgSizeLevel: 2
+  featureFocusOffsetFactor_y: -0.2
+  filterLr: 0.075
+  filterChannelWeightsLr: 0.1
+  gaussianSigma: 0.75
