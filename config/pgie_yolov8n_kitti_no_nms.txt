@@ -37,5 +37,25 @@ labelfile-path=../labels/labels_kitti_custom.txt
 # clustering/NMS yang dijalankan), dibiarkan di sini hanya sebagai referensi
 # nilai yang dipakai versi ber-NMS (pgie_yolov8n_kitti.txt).
 # nms-iou-threshold=0.45
-pre-cluster-threshold=0.05
+
+# [Modifikasi] pre-cluster-threshold 0.05 -> 0.001.
+# Parser custom (NvDsInferParseYolo di libnvdsinfer_custom_impl_Yolo.so, basis
+# proyek marcoslucianops/DeepStream-Yolo) TIDAK melakukan NMS sendiri, dan
+# model ONNX-nya (yolov8n_kitti.onnx) juga tidak membakar NMS ke dalam graph
+# (output mentah [batch, 8400, 6] per frame, tanpa operator NMS/TopK apa pun -
+# sudah diverifikasi langsung dari file .onnx-nya). Jadi cluster-mode=4 di
+# atas SECARA TEKNIS sudah cukup untuk mematikan NMS.
+#
+# Tapi karena YOLOv8n-KITTI ini anchor-free & terlatih cukup baik, pada
+# threshold 0.05 biasanya cuma ADA 1 kandidat box per objek yang lolos
+# (kandidat "duplikat" dari grid cell tetangga sudah keburu meluruh di bawah
+# 0.05), sehingga efek "tanpa NMS" jadi nyaris tidak kelihatan meski NMS sudah
+# nonaktif. Menurunkan threshold ke 0.001 membuat kandidat-kandidat lemah di
+# sekitar tiap objek (yang sebelumnya disaring habis oleh threshold 0.05)
+# ikut lolos dan tampil sebagai bbox tumpang-tindih yang jelas terlihat.
+#
+# Efek samping (disengaja, khusus untuk demo ini): akan muncul juga banyak
+# box "noise" berkonfidensi sangat rendah di area tanpa objek nyata. Ini
+# wajar untuk mode perbandingan "tanpa NMS", bukan bug.
+pre-cluster-threshold=0.001
 topk=300
